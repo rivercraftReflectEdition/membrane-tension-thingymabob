@@ -11,6 +11,14 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
 const m = html.match(/\/\* @physics-core-begin \*\/([\s\S]*?)\/\* @physics-core-end \*\//);
 if (!m) { console.error('FAIL: physics-core sentinels not found in index.html'); process.exit(1); }
 
+/* the built page must be fresh: its core must equal src/physics-core.js */
+const srcCore = fs.readFileSync(path.join(__dirname, '..', 'src', 'physics-core.js'), 'utf8');
+if (m[1].trim() !== srcCore.trim()) {
+  console.error('FAIL: index.html is stale — run `node build.js`');
+  process.exit(1);
+}
+console.log('PASS built index.html matches src/physics-core.js');
+
 const module_ = { exports: {} };
 (function (module) { eval(m[1]); })(module_);
 const core = module_.exports;

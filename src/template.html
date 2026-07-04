@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Membrane Mirror — Gravity vs. Flatness</title>
+<meta name="description" content="How flat can a corner-tensioned membrane mirror be pulled against gravity — on the ground vs. in orbit.">
+<style>
+/*__STYLES__*/
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <div class="kicker">Corner-tensioned membrane mirror</div>
+    <h1>Gravity vs. flatness</h1>
+  </div>
+  <div class="chips" role="group" aria-label="Derived film properties">
+    <div class="chip"><span class="lbl">film thickness</span><span class="val" id="chipT">—</span></div>
+    <div class="chip"><span class="lbl">areal density</span><span class="val" id="chipSig">—</span></div>
+    <div class="chip"><span class="lbl">film stress</span><span class="val" id="chipStress">—</span></div>
+  </div>
+</header>
+
+<div class="layout">
+<aside aria-label="Controls">
+  <h2>Membrane &amp; pull</h2>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngF">Corner force</label>
+      <span class="ctlval"><input class="num" id="numF" type="number" min="0" max="1000" step="5" value="250" aria-label="Corner force, newtons"><span class="unit">N</span></span></div>
+    <input id="rngF" type="range" min="0" max="1000" step="5" value="250">
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngPhi">Catenary half-angle</label>
+      <span class="ctlval"><input class="num" id="numPhi" type="number" min="0" max="45" step="1" value="10" aria-label="Catenary cord arc half-angle, degrees"><span class="unit">°</span></span></div>
+    <input id="rngPhi" type="range" min="0" max="45" step="1" value="10">
+    <div class="ctlnote">edge-cord arc angle · 0° = direct corner attach <span class="solving" id="phiStatus"></span></div>
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngG">Gravity</label>
+      <span class="ctlval"><input class="num" id="numG" type="number" min="0" max="9.81" step="0.01" value="9.81" aria-label="Gravity, meters per second squared"><span class="unit">m/s²</span></span></div>
+    <input id="rngG" type="range" min="0" max="9.81" step="0.01" value="9.81">
+    <div class="presets" role="group" aria-label="Gravity presets">
+      <button type="button" data-g="0">Space</button>
+      <button type="button" data-g="1.62">Moon</button>
+      <button type="button" data-g="3.72">Mars</button>
+      <button type="button" data-g="9.81" aria-pressed="true">Earth</button>
+    </div>
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngL">Side length</label>
+      <span class="ctlval"><input class="num" id="numL" type="number" min="2" max="20" step="0.1" value="15" aria-label="Membrane side length, meters"><span class="unit">m</span></span></div>
+    <input id="rngL" type="range" min="2" max="20" step="0.1" value="15">
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngM">Membrane mass</label>
+      <span class="ctlval"><input class="num" id="numM" type="number" min="100" max="1000" step="10" value="350" aria-label="Membrane mass, grams"><span class="unit">g</span></span></div>
+    <input id="rngM" type="range" min="100" max="1000" step="10" value="350">
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="numTgt">Target slope error</label>
+      <span class="ctlval"><input class="num" id="numTgt" type="number" min="0.1" max="20" step="0.1" value="2.3" aria-label="Target RMS slope error, milliradians"><span class="unit">mrad</span></span></div>
+  </div>
+
+  <h2 style="margin-top:18px">Film — CP1 defaults</h2>
+  <div class="ctl">
+    <div class="ctlrow"><label for="numE">Young’s modulus E</label>
+      <span class="ctlval"><input class="num" id="numE" type="number" min="0.1" max="500" step="0.1" value="4.4" aria-label="Young's modulus, gigapascals"><span class="unit">GPa</span></span></div>
+  </div>
+  <div class="ctl">
+    <div class="ctlrow"><label for="numRho">Density ρ</label>
+      <span class="ctlval"><input class="num" id="numRho" type="number" min="500" max="5000" step="10" value="1430" aria-label="Film density, kilograms per cubic meter"><span class="unit">kg/m³</span></span></div>
+    <div class="ctlnote">E sets in-plane strain (edge scallop); the sag shape depends only on tension and gravity. ρ sets thickness.</div>
+  </div>
+
+  <button class="reset" type="button" id="btnReset">reset to defaults</button>
+</aside>
+
+<main>
+  <section class="hero" aria-label="Membrane comparison">
+    <figure class="panel">
+      <figcaption>
+        <span class="envname">On the ground</span>
+        <span class="envg mono" id="lblG">g = 9.81 m/s²</span>
+      </figcaption>
+      <canvas id="cvG" role="img" aria-label="Ground membrane surface"></canvas>
+      <div class="stats">
+        <div class="stat"><span class="lbl">rms slope</span>
+          <span class="val" id="stGslope">—</span>
+          <span class="ideal" id="stGslopeI">uniform ideal —</span></div>
+        <div class="stat"><span class="lbl">p–v sag</span>
+          <span class="val" id="stGsag">—</span>
+          <span class="ideal" id="stGsagI">uniform ideal —</span></div>
+        <div class="stat"><span class="lbl">tension</span>
+          <span class="val" id="stGten">—</span>
+          <span class="ideal" id="stGnote">&nbsp;</span></div>
+      </div>
+    </figure>
+    <figure class="panel">
+      <figcaption>
+        <span class="envname">In space</span>
+        <span class="envg mono">0 g · sunlight</span>
+      </figcaption>
+      <canvas id="cvS" role="img" aria-label="Space membrane surface"></canvas>
+      <div class="stats">
+        <div class="stat"><span class="lbl">rms slope</span>
+          <span class="val" id="stSslope">—</span>
+          <span class="ideal">sunlight only · 9.1 µPa</span></div>
+        <div class="stat"><span class="lbl">p–v sag</span>
+          <span class="val" id="stSsag">—</span>
+          <span class="ideal">&nbsp;</span></div>
+        <div class="stat"><span class="lbl">tension</span>
+          <span class="val" id="stSten">—</span>
+          <span class="ideal" id="stSnote">&nbsp;</span></div>
+      </div>
+    </figure>
+  </section>
+
+  <section class="forceline" id="forceline" aria-live="polite">
+    <span class="mono" id="reqLine">—</span>
+    <span class="flag" id="reqFlag" hidden>exceeds ~1 kN — film-tear / boom-buckling territory</span>
+  </section>
+
+  <section class="row2">
+    <figure class="chart">
+      <figcaption>Mid-span section</figcaption>
+      <div class="legend">
+        <span><span class="sw accent"></span>FEM</span>
+        <span><span class="sw dash"></span>uniform ideal</span>
+        <span><span class="sw space"></span>space</span>
+      </div>
+      <canvas id="cvSec" role="img" aria-label="Cross-section of the sagging membrane at mid-span"></canvas>
+    </figure>
+    <figure class="chart">
+      <figcaption>RMS slope vs corner force</figcaption>
+      <div class="legend">
+        <span><span class="sw accent"></span>ground — FEM</span>
+        <span><span class="sw dash"></span>ground — ideal</span>
+        <span><span class="sw space"></span>space</span>
+      </div>
+      <canvas id="cvChart" role="img" aria-label="RMS slope error versus corner force, ground and space"></canvas>
+    </figure>
+  </section>
+
+  <section class="row3">
+    <figure class="chart">
+      <figcaption>Slew billow — in space</figcaption>
+      <div class="slewctl">
+        <label for="rngSlew">Slew rate</label>
+        <input id="rngSlew" type="range" min="0" max="5" step="0.01" value="0.83">
+        <span class="ctlval"><input class="num" id="numSlew" type="number" min="0" max="5" step="0.01" value="0.83" aria-label="Slew rate, degrees per second"><span class="unit">°/s</span></span>
+        <span class="mono slewout" id="slewOut">—</span>
+      </div>
+      <canvas id="cvSlew" role="img" aria-label="RMS slope error versus slew rate in space"></canvas>
+    </figure>
+  </section>
+</main>
+</div>
+
+</div>
+
+<script id="physics-core">
+/*__CORE__*/
+</script>
+
+<script>
+/*__APP__*/
+</script>
+</body>
+</html>
