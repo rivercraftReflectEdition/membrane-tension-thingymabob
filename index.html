@@ -226,8 +226,8 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 
   <div class="ctl">
     <div class="ctlrow"><label for="rngM">Membrane mass</label>
-      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="3000" step="1" value="350" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
-    <input id="rngM" type="range" min="1" max="3000" step="1" value="350">
+      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="3000" step="1" value="1000" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
+    <input id="rngM" type="range" min="1" max="3000" step="1" value="1000">
     <div class="ctlnote">total as-built mass — film, tapes, cords; this is what gravity pulls on</div>
   </div>
 
@@ -614,7 +614,8 @@ function solveInPlane(mesh, nu, opts = {}) {
           [sn*sn, cs*cs, -cs*sn],
           [-2*cs*sn, 2*cs*sn, cs*cs - sn*sn],
         ];
-        const Ds = [[1,0,0],[0,kResid,0],[0,0,kResid]];
+        /* uniaxial modulus is Et, i.e. (1 - nu^2) in units of Et/(1-nu^2) */
+        const Ds = [[1 - nu * nu, 0, 0], [0, kResid, 0], [0, 0, kResid]];
         Dt = [[0,0,0],[0,0,0],[0,0,0]];
         for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) {
           let s = 0;
@@ -622,6 +623,15 @@ function solveInPlane(mesh, nu, opts = {}) {
             s += T[k1][r] * Ds[k1][k2] * T[k2][cc];
           Dt[r][cc] = s;
         }
+      }
+      /* stress resultants from the material that PRODUCED this solve — kept
+       * in equilibrium with u even when the loop exits at maxIter (the damped
+       * update below is for the NEXT pass only) */
+      {
+        const D = Dm.subarray(e * 9, e * 9 + 9);
+        stresses[e * 3]     = D[0] * exx + D[1] * eyy + D[2] * gxy;
+        stresses[e * 3 + 1] = D[3] * exx + D[4] * eyy + D[5] * gxy;
+        stresses[e * 3 + 2] = D[6] * exx + D[7] * eyy + D[8] * gxy;
       }
       /* damped update to avoid state chatter: full steps first, then heavier
        * damping so the material field settles instead of oscillating */
@@ -637,14 +647,6 @@ function solveInPlane(mesh, nu, opts = {}) {
     if (iter > 4 && changed === 0 && maxDD < 5e-3) break;
   }
 
-  /* final stress resultants from the converged material state */
-  for (let e = 0; e < ne; e++) {
-    const D = Dm.subarray(e * 9, e * 9 + 9);
-    const [exx, eyy, gxy] = [strains[e*3], strains[e*3+1], strains[e*3+2]];
-    stresses[e * 3]     = D[0]*exx + D[1]*eyy + D[2]*gxy;
-    stresses[e * 3 + 1] = D[3]*exx + D[4]*eyy + D[5]*gxy;
-    stresses[e * 3 + 2] = D[6]*exx + D[7]*eyy + D[8]*gxy;
-  }
   /* wrinkle directions (major principal strain) for display */
   const thetaW = new Float64Array(ne);
   for (let e = 0; e < ne; e++)
@@ -842,7 +844,7 @@ const SLEW_ACC = 0.65;                     // peak alpha ≈ 0.65·omega² for a
 /* massG = TOTAL as-built mass (film + tapes + cords) — it alone sets the
  * gravity load. tUm = film thickness, a direct input: it only enters through
  * E·t (in-plane stretch, stiffening, film stress), never the sag shape. */
-const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 4.4, tUm: 2.6,
+const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 1000, tgt: 2.3, E_GPa: 4.4, tUm: 2.6,
                    phiDeg: 10, grabPct: 3, slew: 0.83 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
@@ -862,8 +864,8 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ------------------------------- theme -----------------------------------
  * Orange / white / black. Both palettes follow the same roles; canvases read
- * the active one at draw time. No storage — default follows the OS, the
- * header button flips it for the session. */
+ * the active one at draw time. No storage — LIGHT by default; ?theme=dark or
+ * the header button flips it for the session. */
 const THEMES = {
   light: {
     ink: '#0b0b0b', ink2: '#52514e', muted: '#898781', grid: '#e1e0d9',
@@ -966,10 +968,16 @@ function msgFor(key) {
   const [phiK, grabK2] = key.split('|').map(Number);
   return { ...CFG, key, phiKey: phiK, phi: phiK * Math.PI / 180, rTab: grabK2 / 200 };
 }
+function cacheGet(k) {                                   // LRU: refresh recency on hit
+  const v = solver.cache.get(k);
+  if (v) { solver.cache.delete(k); solver.cache.set(k, v); }
+  return v;
+}
 function requestShapes() {
   const k = solveKey();
-  if (solver.cache.has(k)) {
-    if (shapes !== solver.cache.get(k)) { applyShapes(solver.cache.get(k), false); }
+  const hit = cacheGet(k);
+  if (hit) {
+    if (shapes !== hit) applyShapes(hit, false);
     els.phiStatus.textContent = '';
     return;
   }
@@ -977,20 +985,39 @@ function requestShapes() {
   solver.queued = k;
   pumpSolver();
 }
+/* worker died or hung: retry the in-flight key on the main thread */
+function solverFailover(key) {
+  if (solver.worker) { try { solver.worker.terminate(); } catch (_) {} }
+  solver.worker = null; solver.busy = false;
+  if (solver.queued === null) solver.queued = key;
+  pumpSolver();
+}
 function pumpSolver() {
   if (solver.busy || solver.queued === null) return;
   const msg = msgFor(solver.queued);
   solver.queued = null; solver.busy = true;
-  if (solver.worker) solver.worker.postMessage(msg);
-  else setTimeout(() => {                                // no-worker fallback
-    const sh = buildShapes(msg.nn, msg.nu, msg);
-    const p = packShapes(sh); p.phiKey = msg.phiKey; p.key = msg.key;
-    onSolved(p);
+  if (solver.worker) {
+    solver.worker.postMessage(msg);
+    clearTimeout(solver.timer);                          // per-solve watchdog, re-armed every time
+    solver.timer = setTimeout(() => { if (solver.busy) solverFailover(msg.key); }, 10000);
+  } else setTimeout(() => {                              // no-worker fallback
+    try {
+      const sh = buildShapes(msg.nn, msg.nu, msg);
+      const p = packShapes(sh); p.phiKey = msg.phiKey; p.key = msg.key;
+      onSolved(p);
+    } catch (err) {                                      // never wedge the pipeline
+      solver.busy = false;
+      els.phiStatus.textContent = '· solver error';
+      pumpSolver();
+    }
   }, 30);
 }
 function onSolved(p) {
+  clearTimeout(solver.timer);
   solver.busy = false;
   solver.cache.set(p.key, p);
+  while (solver.cache.size > 24)                         // bound retained typed arrays
+    solver.cache.delete(solver.cache.keys().next().value);
   if (p.key === solveKey() && solver.queued === null) {
     els.phiStatus.textContent = '';
     applyShapes(p, !shapes);
@@ -1027,15 +1054,7 @@ function elemSlopesOf(what, mesh) {
       'p.slopesR.buffer,p.uhat.buffer,p.wstate.buffer,p.thetaW.buffer]);};';
     solver.worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
     solver.worker.onmessage = e => onSolved(e.data);
-    /* worker dead or silent: fall back to solving on the main thread,
-     * re-queuing the angle we were waiting for */
-    const failover = () => {
-      solver.worker = null; solver.busy = false;
-      if (solver.queued === null) solver.queued = solveKey();
-      pumpSolver();
-    };
-    solver.worker.onerror = failover;
-    setTimeout(() => { if (!shapes && solver.busy) failover(); }, 6000);
+    solver.worker.onerror = () => solverFailover(solveKey());
   } catch (_) { solver.worker = null; }
   requestShapes();
 })();
@@ -1056,10 +1075,20 @@ function scheduleTick() { if (!anim.raf) anim.raf = requestAnimationFrame(tick);
 function update() {
   const d = derived();
 
+  /* the tension the film actually carries: the FEM interior resultant.
+   * qInt is the closed form the solver reproduces (q = √2·sinφ/(cosφ+sinφ)
+   * per unit F/L with cords; ≈1.10 for direct corner attach) — the ideal
+   * convention d.N = F/(√2·L) is kept as the labeled secondary. */
+  const qInt = shapes ? (shapes.phiKey > 0
+    ? Math.SQRT2 * Math.sin(shapes.phiKey * Math.PI / 180) /
+      (Math.cos(shapes.phiKey * Math.PI / 180) + Math.sin(shapes.phiKey * Math.PI / 180))
+    : 1.10) : NaN;
+  const Nfem = qInt * d.F / d.L;
+
   /* chips + grab-width note */
   els.chips.sig.textContent = fmt(d.sigma * 1e3, 2) + ' g/m²';
   $('grabNote').textContent = '≈ ' + fmt(state.grabPct / 100 * d.L * 1000, 0) + ' mm at current size';
-  els.chips.stress.textContent = d.t > 0 ? fmtAuto(d.N / d.t / 1e6) + ' MPa' : '—';
+  els.chips.stress.textContent = d.t > 0 && shapes ? fmtSmart(Nfem / d.t / 1e6) + ' MPa' : '—';
 
   /* per-environment readouts (ground = current g, space = 0) */
   els.g.lbl.textContent = 'g = ' + fmt(d.g, 2) + ' m/s²';
@@ -1072,10 +1101,6 @@ function update() {
    * billow itself creates (stress stiffening, dN ~ E·t·mean(|grad w|^2)/2).
    * When dN rivals the interior tension — small mirrors, shallow cords, low
    * pull — the real film is stiffer than modeled and reads FLATTER. */
-  const qInt = shapes ? (shapes.phiKey > 0
-    ? Math.SQRT2 * Math.sin(shapes.phiKey * Math.PI / 180) /
-      (Math.cos(shapes.phiKey * Math.PI / 180) + Math.sin(shapes.phiKey * Math.PI / 180))
-    : 1.10) : NaN;
   const stiff = shapes
     ? 0.5 * d.E * d.t * Math.pow(truthSlope / 1e3, 2) / (qInt * Math.max(d.F, 1) / d.L)
     : 0;
@@ -1090,10 +1115,10 @@ function update() {
     els.g.slopeI.textContent = 'uniform ideal ' + fmtAuto(idealSlope) + ' mrad';
     els.g.sagI.textContent = 'uniform ideal ' + fmtAuto(idealSag) + ' mm';
   }
-  els.g.ten.innerHTML = fmtAuto(d.N) + unit('N/m');
+  els.g.ten.innerHTML = (shapes ? fmtSmart(Nfem) : '…') + unit('N/m');
   els.g.note.textContent = !d.slack && regime ? '† beyond small-slope regime'
     : !d.slack && stiff > 0.25 ? '† stiffening ignored — real film reads flatter'
-    : ' ';
+    : 'ideal ' + fmtAuto(d.N) + ' N/m';
 
   /* space: solar radiation pressure is the only transverse load */
   const spSlope = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
@@ -1104,20 +1129,24 @@ function update() {
     els.s.slope.innerHTML = (shapes ? fmtSmart(spSlope) : '…') + unit('mrad');
     els.s.sag.innerHTML = (shapes ? fmtSmart(spSag) : '…') + unit('mm');
   }
-  els.s.ten.innerHTML = fmtAuto(d.N) + unit('N/m');
+  els.s.ten.innerHTML = (shapes ? fmtSmart(Nfem) : '…') + unit('N/m');
+  els.s.note.textContent = 'ideal ' + fmtAuto(d.N) + ' N/m';
 
-  /* shared required-force line: same target, both loads */
+  /* shared required-force line — from the FEM curve (ST·σgL²/F = target),
+   * so it agrees with the chart and the panel readouts; ideal shown beside */
   const tgt = state.tgt / 1e3;
-  const FreqS = P_SUN * d.L * d.L / (2 * Math.sqrt(Math.PI) * tgt);   // sunlight only
+  const ST = shapes ? shapes.coeffs.ST : 1 / (2 * Math.sqrt(Math.PI));
+  const FreqS = ST * P_SUN * d.L * d.L / tgt;            // sunlight only
   if (d.g < 0.005) {
     els.reqLine.textContent = '0 g — gravity gone: sunlight alone needs just ' +
       fmtSmart(FreqS) + ' N/corner for ' + fmt(state.tgt, 2) + ' mrad.';
     els.reqFlag.hidden = true;
   } else {
-    const Freq = analytic.Freq(d.sigma, d.g, d.L, tgt);
+    const Freq = ST * d.sigma * d.g * d.L * d.L / tgt;
+    const FreqIdeal = analytic.Freq(d.sigma, d.g, d.L, tgt);
     els.reqLine.textContent = 'To reach ' + fmt(state.tgt, 2) + ' mrad — ground ' +
-      fmt(Freq, 0) + ' N/corner · space ' + fmtSmart(FreqS) +
-      ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
+      fmt(Freq, 0) + ' N/corner (ideal ' + fmt(FreqIdeal, 0) + ') · space ' +
+      fmtSmart(FreqS) + ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
     els.reqFlag.hidden = Freq <= 1000;
   }
 
@@ -1487,8 +1516,9 @@ function drawChart() {
     ctx.fillStyle = TH.muted; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
     if (shapes) { ctx.fillStyle = TH.accent; ctx.fillText('FEM', X(0.42 * Fmax), Y(kTruth / (0.42 * Fmax)) + 13); }
 
-    /* required-force marker on the axis (the number lives in the shared line) */
-    const Freq = analytic.Freq(d.sigma, d.g, d.L, state.tgt / 1e3);
+    /* required-force marker on the axis — where the FEM curve meets the
+     * target (the number lives in the shared line) */
+    const Freq = shapes ? kTruth / state.tgt : NaN;
     if (Freq <= Fmax) {
       ctx.strokeStyle = TH.ink2; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(X(Freq), m.t + ph); ctx.lineTo(X(Freq), m.t + ph - 7); ctx.stroke();
@@ -1734,11 +1764,11 @@ function drawAll() {
 /* ------------------------------ controls -------------------------------- */
 function bindPair(rngId, numId, key) {
   const rng = $(rngId), num = $(numId);
-  const set = (v, live) => {
+  const set = (v, noSnap) => {
     state[key] = v;
     if (rng) rng.value = v;
     num.value = v;
-    onControl(key, live);
+    onControl(key, noSnap);
   };
   if (rng) {
     rng.addEventListener('input', () => set(parseFloat(rng.value), true));  // no snap mid-drag
@@ -1748,7 +1778,7 @@ function bindPair(rngId, numId, key) {
     let v = parseFloat(num.value);
     if (!isFinite(v)) v = DEFAULTS[key];
     v = Math.min(parseFloat(num.max), Math.max(parseFloat(num.min), v));
-    set(v);
+    set(v, true);                                        // typed values are exact — never snap
   });
   return set;
 }
@@ -1767,10 +1797,11 @@ const setters = {
 
 const G_PRESETS = [0, 1.62, 3.72, 9.81];
 const presetBtns = [...document.querySelectorAll('.presets button')];
-function onControl(key, live) {
+function onControl(key, noSnap) {
   if (key === 'g') {
-    /* snap the star control to nearby presets — only on release, not mid-drag */
-    if (!live)
+    /* snap the star control to nearby presets — slider release only;
+     * dragging and typed values are taken exactly as given */
+    if (!noSnap)
       for (const p of G_PRESETS)
         if (Math.abs(state.g - p) < 0.22 && state.g !== p) {
           state.g = p; $('rngG').value = p; $('numG').value = p; break;

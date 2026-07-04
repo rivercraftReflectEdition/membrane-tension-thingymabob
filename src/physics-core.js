@@ -274,7 +274,8 @@ function solveInPlane(mesh, nu, opts = {}) {
           [sn*sn, cs*cs, -cs*sn],
           [-2*cs*sn, 2*cs*sn, cs*cs - sn*sn],
         ];
-        const Ds = [[1,0,0],[0,kResid,0],[0,0,kResid]];
+        /* uniaxial modulus is Et, i.e. (1 - nu^2) in units of Et/(1-nu^2) */
+        const Ds = [[1 - nu * nu, 0, 0], [0, kResid, 0], [0, 0, kResid]];
         Dt = [[0,0,0],[0,0,0],[0,0,0]];
         for (let r = 0; r < 3; r++) for (let cc = 0; cc < 3; cc++) {
           let s = 0;
@@ -282,6 +283,15 @@ function solveInPlane(mesh, nu, opts = {}) {
             s += T[k1][r] * Ds[k1][k2] * T[k2][cc];
           Dt[r][cc] = s;
         }
+      }
+      /* stress resultants from the material that PRODUCED this solve — kept
+       * in equilibrium with u even when the loop exits at maxIter (the damped
+       * update below is for the NEXT pass only) */
+      {
+        const D = Dm.subarray(e * 9, e * 9 + 9);
+        stresses[e * 3]     = D[0] * exx + D[1] * eyy + D[2] * gxy;
+        stresses[e * 3 + 1] = D[3] * exx + D[4] * eyy + D[5] * gxy;
+        stresses[e * 3 + 2] = D[6] * exx + D[7] * eyy + D[8] * gxy;
       }
       /* damped update to avoid state chatter: full steps first, then heavier
        * damping so the material field settles instead of oscillating */
@@ -297,14 +307,6 @@ function solveInPlane(mesh, nu, opts = {}) {
     if (iter > 4 && changed === 0 && maxDD < 5e-3) break;
   }
 
-  /* final stress resultants from the converged material state */
-  for (let e = 0; e < ne; e++) {
-    const D = Dm.subarray(e * 9, e * 9 + 9);
-    const [exx, eyy, gxy] = [strains[e*3], strains[e*3+1], strains[e*3+2]];
-    stresses[e * 3]     = D[0]*exx + D[1]*eyy + D[2]*gxy;
-    stresses[e * 3 + 1] = D[3]*exx + D[4]*eyy + D[5]*gxy;
-    stresses[e * 3 + 2] = D[6]*exx + D[7]*eyy + D[8]*gxy;
-  }
   /* wrinkle directions (major principal strain) for display */
   const thetaW = new Float64Array(ne);
   for (let e = 0; e < ne; e++)
