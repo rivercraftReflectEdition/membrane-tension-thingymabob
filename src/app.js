@@ -71,7 +71,7 @@ const els = {
     ten: $('stGten'), note: $('stGnote'), cv: $('cvG'), lbl: $('lblG'),
   },
   s: { slope: $('stSslope'), sag: $('stSsag'), ten: $('stSten'), note: $('stSnote'), cv: $('cvS') },
-  reqLine: $('reqLine'), reqFlag: $('reqFlag'),
+  reqLine: $('reqLine'),
   cvSec: $('cvSec'), cvChart: $('cvChart'), cvSlew: $('cvSlew'), cvSlewAnim: $('cvSlewAnim'),
   phiStatus: $('phiStatus'), slewOut: $('slewOut'),
 };
@@ -264,28 +264,17 @@ function update() {
   const truthSlope = shapes ? shapes.coeffs.ST * d.sScale * 1e3 : NaN;
   const truthSag = shapes ? shapes.coeffs.PVT * d.wScale * 1e3 : NaN;
 
-  /* validity flags. Linear membrane theory ignores the extra tension the
-   * billow itself creates (stress stiffening, dN ~ E·t·mean(|grad w|^2)/2).
-   * When dN rivals the interior tension — small mirrors, shallow cords, low
-   * pull — the real film is stiffer than modeled and reads FLATTER. */
-  const stiff = shapes
-    ? 0.5 * d.E * d.t * Math.pow(truthSlope / 1e3, 2) / (qInt * Math.max(d.F, 1) / d.L)
-    : 0;
-  const regime = truthSlope > 100 || idealSlope > 100;   // small-slope validity flag
-  const flagged = regime || stiff > 0.25;
   if (d.slack) {
     els.g.slope.innerHTML = 'slack'; els.g.sag.innerHTML = '—';
     els.g.slopeI.textContent = 'membrane untensioned'; els.g.sagI.textContent = ' ';
   } else {
-    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad') + (flagged ? '†' : '');
+    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad');
     els.g.sag.innerHTML = (shapes ? fmtAuto(truthSag) : '…') + unit('mm');
     els.g.slopeI.textContent = 'uniform ideal ' + fmtAuto(idealSlope) + ' mrad';
     els.g.sagI.textContent = 'uniform ideal ' + fmtAuto(idealSag) + ' mm';
   }
   els.g.ten.innerHTML = (shapes ? fmtSmart(Nfem) : '…') + unit('N/m');
-  els.g.note.textContent = !d.slack && regime ? '† beyond small-slope regime'
-    : !d.slack && stiff > 0.25 ? '† stiffening ignored — real film reads flatter'
-    : 'ideal ' + fmtAuto(d.N) + ' N/m';
+  els.g.note.textContent = d.slack ? ' ' : 'ideal ' + fmtAuto(d.N) + ' N/m';
 
   /* space: solar radiation pressure is the only transverse load */
   const spSlope = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
@@ -307,14 +296,12 @@ function update() {
   if (d.g < 0.005) {
     els.reqLine.textContent = '0 g — gravity gone: sunlight alone needs just ' +
       fmtSmart(FreqS) + ' N/corner for ' + fmt(state.tgt, 2) + ' mrad.';
-    els.reqFlag.hidden = true;
   } else {
     const Freq = ST * d.sigma * d.g * d.L * d.L / tgt;
     const FreqIdeal = analytic.Freq(d.sigma, d.g, d.L, tgt);
     els.reqLine.textContent = 'To reach ' + fmt(state.tgt, 2) + ' mrad — ground ' +
       fmt(Freq, 0) + ' N/corner (ideal ' + fmt(FreqIdeal, 0) + ') · space ' +
       fmtSmart(FreqS) + ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
-    els.reqFlag.hidden = Freq <= 1000;
   }
 
   /* slew readout */
@@ -1019,8 +1006,9 @@ function wireOrbit(cv) {
   });
   cv.addEventListener('pointermove', e => {
     if (!last) return;
-    cam.az += (e.clientX - last[0]) * 0.008;
-    cam.el = Math.min(1.25, Math.max(0.12, cam.el + (e.clientY - last[1]) * 0.006));
+    /* gentle, mostly-horizontal orbit — elevation stays near the working view */
+    cam.az += (e.clientX - last[0]) * 0.006;
+    cam.el = Math.min(0.72, Math.max(0.24, cam.el + (e.clientY - last[1]) * 0.003));
     last = [e.clientX, e.clientY];
     drawHero();
   });

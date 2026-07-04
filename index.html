@@ -86,12 +86,12 @@ input[type=range]{
 }
 input[type=range]::-webkit-slider-runnable-track{height:2px;background:var(--grid)}
 input[type=range]::-webkit-slider-thumb{
-  -webkit-appearance:none;width:10px;height:10px;
-  background:var(--ink);margin-top:-4px;border:none;
+  -webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--ink);margin-top:-4.5px;border:none;
 }
 input[type=range]:focus-visible{outline:1px solid var(--accent);outline-offset:4px}
 input[type=range]::-moz-range-track{height:2px;background:var(--grid)}
-input[type=range]::-moz-range-thumb{width:10px;height:10px;border-radius:0;background:var(--ink);border:none}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border-radius:50%;background:var(--ink);border:none}
 .presets{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
 .presets button{
   font:11.5px var(--sans);color:var(--ink2);background:transparent;
@@ -129,9 +129,6 @@ figure.panel figcaption{display:flex;justify-content:space-between;align-items:b
   margin:16px 0;padding:10px 2px;border-top:1px solid var(--ink);border-bottom:1px solid var(--grid);
   font-size:13.5px;display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;
 }
-.flag{color:var(--flag);font-size:12px}
-.flag::before{content:"▲ "}
-
 /* charts */
 .row2{display:grid;grid-template-columns:5fr 7fr;gap:16px}
 @media (max-width:820px){.row2{grid-template-columns:1fr}}
@@ -232,7 +229,6 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
     <div class="ctlrow"><label for="rngM">Membrane mass</label>
       <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="3000" step="1" value="1000" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
     <input id="rngM" type="range" min="1" max="3000" step="1" value="1000">
-    <div class="ctlnote">total as-built mass — film, tapes, cords; this is what gravity pulls on</div>
   </div>
 
   <div class="ctl">
@@ -296,7 +292,6 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 
   <section class="forceline" id="forceline" aria-live="polite">
     <span class="mono" id="reqLine">—</span>
-    <span class="flag" id="reqFlag" hidden>exceeds ~1 kN — film-tear / boom-buckling territory</span>
   </section>
 
   <section class="row2">
@@ -908,7 +903,7 @@ const els = {
     ten: $('stGten'), note: $('stGnote'), cv: $('cvG'), lbl: $('lblG'),
   },
   s: { slope: $('stSslope'), sag: $('stSsag'), ten: $('stSten'), note: $('stSnote'), cv: $('cvS') },
-  reqLine: $('reqLine'), reqFlag: $('reqFlag'),
+  reqLine: $('reqLine'),
   cvSec: $('cvSec'), cvChart: $('cvChart'), cvSlew: $('cvSlew'), cvSlewAnim: $('cvSlewAnim'),
   phiStatus: $('phiStatus'), slewOut: $('slewOut'),
 };
@@ -1101,28 +1096,17 @@ function update() {
   const truthSlope = shapes ? shapes.coeffs.ST * d.sScale * 1e3 : NaN;
   const truthSag = shapes ? shapes.coeffs.PVT * d.wScale * 1e3 : NaN;
 
-  /* validity flags. Linear membrane theory ignores the extra tension the
-   * billow itself creates (stress stiffening, dN ~ E·t·mean(|grad w|^2)/2).
-   * When dN rivals the interior tension — small mirrors, shallow cords, low
-   * pull — the real film is stiffer than modeled and reads FLATTER. */
-  const stiff = shapes
-    ? 0.5 * d.E * d.t * Math.pow(truthSlope / 1e3, 2) / (qInt * Math.max(d.F, 1) / d.L)
-    : 0;
-  const regime = truthSlope > 100 || idealSlope > 100;   // small-slope validity flag
-  const flagged = regime || stiff > 0.25;
   if (d.slack) {
     els.g.slope.innerHTML = 'slack'; els.g.sag.innerHTML = '—';
     els.g.slopeI.textContent = 'membrane untensioned'; els.g.sagI.textContent = ' ';
   } else {
-    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad') + (flagged ? '†' : '');
+    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad');
     els.g.sag.innerHTML = (shapes ? fmtAuto(truthSag) : '…') + unit('mm');
     els.g.slopeI.textContent = 'uniform ideal ' + fmtAuto(idealSlope) + ' mrad';
     els.g.sagI.textContent = 'uniform ideal ' + fmtAuto(idealSag) + ' mm';
   }
   els.g.ten.innerHTML = (shapes ? fmtSmart(Nfem) : '…') + unit('N/m');
-  els.g.note.textContent = !d.slack && regime ? '† beyond small-slope regime'
-    : !d.slack && stiff > 0.25 ? '† stiffening ignored — real film reads flatter'
-    : 'ideal ' + fmtAuto(d.N) + ' N/m';
+  els.g.note.textContent = d.slack ? ' ' : 'ideal ' + fmtAuto(d.N) + ' N/m';
 
   /* space: solar radiation pressure is the only transverse load */
   const spSlope = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
@@ -1144,14 +1128,12 @@ function update() {
   if (d.g < 0.005) {
     els.reqLine.textContent = '0 g — gravity gone: sunlight alone needs just ' +
       fmtSmart(FreqS) + ' N/corner for ' + fmt(state.tgt, 2) + ' mrad.';
-    els.reqFlag.hidden = true;
   } else {
     const Freq = ST * d.sigma * d.g * d.L * d.L / tgt;
     const FreqIdeal = analytic.Freq(d.sigma, d.g, d.L, tgt);
     els.reqLine.textContent = 'To reach ' + fmt(state.tgt, 2) + ' mrad — ground ' +
       fmt(Freq, 0) + ' N/corner (ideal ' + fmt(FreqIdeal, 0) + ') · space ' +
       fmtSmart(FreqS) + ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
-    els.reqFlag.hidden = Freq <= 1000;
   }
 
   /* slew readout */
@@ -1856,8 +1838,9 @@ function wireOrbit(cv) {
   });
   cv.addEventListener('pointermove', e => {
     if (!last) return;
-    cam.az += (e.clientX - last[0]) * 0.008;
-    cam.el = Math.min(1.25, Math.max(0.12, cam.el + (e.clientY - last[1]) * 0.006));
+    /* gentle, mostly-horizontal orbit — elevation stays near the working view */
+    cam.az += (e.clientX - last[0]) * 0.006;
+    cam.el = Math.min(0.72, Math.max(0.24, cam.el + (e.clientY - last[1]) * 0.003));
     last = [e.clientX, e.clientY];
     drawHero();
   });
