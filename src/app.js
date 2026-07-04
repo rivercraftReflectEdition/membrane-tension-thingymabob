@@ -14,7 +14,7 @@ const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
 const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho',
                phi: 'phiDeg', slew: 'slew' };
-const QLIM = { F: [0, 1000], g: [0, 9.81], L: [2, 20], massG: [100, 1000], tgt: [0.1, 20],
+const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [1, 1000], tgt: [0.1, 20],
                E_GPa: [0.1, 500], rho: [500, 5000], phiDeg: [0, 45], slew: [0, 5] };
 {
   const qs = new URLSearchParams(location.search);
@@ -228,18 +228,32 @@ function update() {
   const truthSlope = shapes ? shapes.coeffs.ST * d.sScale * 1e3 : NaN;
   const truthSag = shapes ? shapes.coeffs.PVT * d.wScale * 1e3 : NaN;
 
+  /* validity flags. Linear membrane theory ignores the extra tension the
+   * billow itself creates (stress stiffening, dN ~ E·t·mean(|grad w|^2)/2).
+   * When dN rivals the interior tension — small mirrors, shallow cords, low
+   * pull — the real film is stiffer than modeled and reads FLATTER. */
+  const qInt = shapes ? (shapes.phiKey > 0
+    ? Math.SQRT2 * Math.sin(shapes.phiKey * Math.PI / 180) /
+      (Math.cos(shapes.phiKey * Math.PI / 180) + Math.sin(shapes.phiKey * Math.PI / 180))
+    : 1.10) : NaN;
+  const stiff = shapes
+    ? 0.5 * d.E * d.t * Math.pow(truthSlope / 1e3, 2) / (qInt * Math.max(d.F, 1) / d.L)
+    : 0;
   const regime = truthSlope > 100 || idealSlope > 100;   // small-slope validity flag
+  const flagged = regime || stiff > 0.25;
   if (d.slack) {
     els.g.slope.innerHTML = 'slack'; els.g.sag.innerHTML = '—';
     els.g.slopeI.textContent = 'membrane untensioned'; els.g.sagI.textContent = ' ';
   } else {
-    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad') + (regime ? '†' : '');
+    els.g.slope.innerHTML = (shapes ? fmtAuto(truthSlope) : '…') + unit('mrad') + (flagged ? '†' : '');
     els.g.sag.innerHTML = (shapes ? fmtAuto(truthSag) : '…') + unit('mm');
     els.g.slopeI.textContent = 'uniform ideal ' + fmtAuto(idealSlope) + ' mrad';
     els.g.sagI.textContent = 'uniform ideal ' + fmtAuto(idealSag) + ' mm';
   }
   els.g.ten.innerHTML = fmtAuto(d.N) + unit('N/m');
-  els.g.note.textContent = regime && !d.slack ? '† beyond small-slope regime' : ' ';
+  els.g.note.textContent = !d.slack && regime ? '† beyond small-slope regime'
+    : !d.slack && stiff > 0.25 ? '† stiffening ignored — real film reads flatter'
+    : ' ';
 
   /* space: solar radiation pressure is the only transverse load */
   const spSlope = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
