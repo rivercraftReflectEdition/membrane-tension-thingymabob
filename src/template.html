@@ -9,11 +9,10 @@
 /*__STYLES__*/
 </style>
 <script>
-/* theme before first paint: ?theme=dark|light wins, else OS preference */
+/* theme before first paint: light by default; ?theme=dark opts in */
 (function () {
   var q = new URLSearchParams(location.search).get('theme');
-  document.documentElement.dataset.theme = (q === 'dark' || q === 'light') ? q :
-    matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  document.documentElement.dataset.theme = q === 'dark' ? 'dark' : 'light';
 })();
 </script>
 </head>
@@ -167,7 +166,6 @@
   <section class="row3">
     <figure class="chart">
       <figcaption>Repointing in orbit — slewing billows the film</figcaption>
-      <div class="subcap">turning to a new target accelerates the film; it lags and S-bows, then flattens — sunlight sets the floor</div>
       <div class="slewctl">
         <label for="rngSlew">Slew rate</label>
         <input id="rngSlew" type="range" min="0" max="5" step="0.01" value="0.83">

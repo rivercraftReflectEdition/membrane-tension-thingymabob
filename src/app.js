@@ -34,13 +34,13 @@ const THEMES = {
     ink: '#0b0b0b', ink2: '#52514e', muted: '#898781', grid: '#e1e0d9',
     axis: '#c3c2b7', surface: '#fcfcfb', accent: '#e05500', space: '#0b0b0b',
     inkRGB: '11,11,11',
-    ramp: ['#ffe9d6', '#ffcf9e', '#fca55c', '#e87613', '#b25000', '#6e3000'],
+    ramp: ['#fff1e3', '#ffd9ae', '#ffb877', '#ff9345', '#f76b16', '#d84f00'],
   },
   dark: {
     ink: '#f5f4f0', ink2: '#c3c2b7', muted: '#8f8d86', grid: '#2c2c2a',
     axis: '#4a4a46', surface: '#1a1a19', accent: '#d95926', space: '#f5f4f0',
     inkRGB: '245,244,240',
-    ramp: ['#2b1c10', '#54300e', '#8a4a0a', '#c66a14', '#f68d33', '#ffbe8a'],
+    ramp: ['#3a2412', '#6b3d12', '#a3550e', '#e07018', '#ff9440', '#ffcb9b'],
   },
 };
 for (const t of Object.values(THEMES))
@@ -973,10 +973,8 @@ for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngPhi', 'numPhi'], 'phiDe
   for (const id of ids) $(id).value = state[key];
 presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
 
-/* theme: the pre-paint <head> script already chose (?theme= or OS); adopt it */
+/* theme: light by default (the pre-paint <head> script honors ?theme=dark) */
 setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
-matchMedia('(prefers-color-scheme: dark)')
-  .addEventListener('change', e => setTheme(e.matches ? 'dark' : 'light'));
 $('themeBtn').addEventListener('click', () =>
   setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
 
