@@ -355,8 +355,10 @@ function rampColor(x) {                                  // x in [0,1]
     Math.round(a[1] + (b[1] - a[1]) * f) + ',' + Math.round(a[2] + (b[2] - a[2]) * f) + ')';
 }
 
-/* isometric projection constants — low-ish camera so the bow reads */
+/* fixed isometric constants (slew maneuver preview) — low-ish camera */
 const KX = 0.866, KY = 0.34, KZ = 1.0, SAGFRAC = 0.24;
+/* orbitable camera for the hero panels; shared so both stay comparable */
+const cam = { az: Math.PI / 4, el: 0.40 };
 /* ONE fixed vertical exaggeration: the drawn sag varies continuously with the
  * controls (a taut mirror looks flat, a slack one droops), no rescale jumps.
  * Beyond ~SAGFRAC·L the drawn amplitude compresses smoothly (tanh), shape
@@ -372,12 +374,19 @@ function drawMembrane(cv, d, gEnv, amp) {
   const { ctx, w, h } = fitCanvas(cv);
   ctx.clearRect(0, 0, w, h);
   const L = d.L;
-  /* fixed world box: width 2L·KX, height 2L·KY + allowance for sag */
+  /* orbitable axonometric camera (cam is shared by both hero panels so the
+   * comparison stays honest). Fit against the worst-case footprint over all
+   * azimuths so dragging never pumps the zoom. */
+  const ca = Math.cos(cam.az), sa = Math.sin(cam.az);
+  const se = Math.sin(cam.el), ce = Math.cos(cam.el);
   const pad = 10;
-  const sagAllow = SAGFRAC * L * KZ * 1.1;
-  const sc = Math.min((w - 2 * pad) / (2 * L * KX), (h - 2 * pad - 14) / (2 * L * KY + sagAllow));
-  const cx = w / 2, cy = pad + L * KY * sc;
-  const proj = (X, Y, z) => [cx + (X - Y) * KX * sc, cy + (X + Y) * KY * sc + z * KZ * sc];
+  const sagAllow = SAGFRAC * L * 1.1;
+  const halfDiag = L / Math.SQRT2;
+  const sc = Math.min((w - 2 * pad) / (2 * halfDiag),
+                      (h - 2 * pad - 14) / (2 * halfDiag * se + sagAllow * ce));
+  const cx = w / 2, cy = pad + halfDiag * se * sc;
+  const proj = (X, Y, z) => [cx + (X * ca - Y * sa) * sc,
+                             cy + ((X * sa + Y * ca) * se + z * ce) * sc];
 
   if (!shapes || d.slack) {                              // placeholder / slack flat sheet
     ctx.strokeStyle = inkA(.25); ctx.lineWidth = 1;
@@ -433,11 +442,16 @@ function drawMembrane(cv, d, gEnv, amp) {
   ctx.beginPath(); fr.forEach((p,i)=> i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
   ctx.restore();
 
-  /* surface quads back-to-front, shaded by local slope */
-  for (let s = 0; s <= 2 * (nn - 2); s++) {              // anti-diagonals: i+j = s
-    for (let i = Math.max(0, s - (nn - 2)); i <= Math.min(nn - 2, s); i++) {
-      const j = s - i;
-      const e = j * (nn - 1) + i;
+  /* surface quads back-to-front (painter order follows the camera azimuth),
+   * shaded by local slope */
+  {
+    const ne1 = nn - 1;
+    const order = drawMembrane.order && drawMembrane.order.length === ne1 * ne1
+      ? drawMembrane.order : (drawMembrane.order = Uint32Array.from({ length: ne1 * ne1 }, (_, k) => k));
+    const dep = e => ((e % ne1) + 0.5) * sa + (((e / ne1) | 0) + 0.5) * ca;
+    order.sort((a, b) => dep(a) - dep(b));
+    for (const e of order) {
+      const i = e % ne1, j = (e / ne1) | 0;
       const n0 = j * nn + i, n1 = n0 + 1, n2 = n0 + nn + 1, n3 = n0 + nn;
       const mr = shapes.slopesT[e] * slSc;
       ctx.fillStyle = rampColor(mr / slMax);
@@ -469,15 +483,13 @@ function drawMembrane(cv, d, gEnv, amp) {
     const i = e % ne1, j = (e / ne1) | 0;
     if (((i + 2 * j) % 3)) continue;                     // thin them out
     const n0 = j * nn + i, n2 = n0 + nn + 1;
-    const mx = (px[n0] + px[n2]) / 2, my = (py[n0] + py[n2]) / 2;
-    /* project the in-plane wrinkle direction */
-    const th = shapes.thetaW[e], dx = Math.cos(th), dy = Math.sin(th);
-    const sx = (dx - dy) * KX, sy = (dx + dy) * KY;
-    const len = 0.55 * hh * L * sc / Math.max(Math.hypot(sx, sy), 1e-9);
-    ctx.beginPath();
-    ctx.moveTo(mx - sx * len / 2, my - sy * len / 2);
-    ctx.lineTo(mx + sx * len / 2, my + sy * len / 2);
-    ctx.stroke();
+    /* stroke along the in-plane wrinkle direction, in world space */
+    const th = shapes.thetaW[e], hl = 0.28 * hh * L;
+    const dx = Math.cos(th) * hl, dy = Math.sin(th) * hl;
+    const mxw = (wx[n0] + wx[n2]) / 2, myw = (wy[n0] + wy[n2]) / 2;
+    const zc = (what[n0] + what[n2]) / 2 * wSc;
+    const pA = proj(mxw - dx, myw - dy, zc), pB = proj(mxw + dx, myw + dy, zc);
+    ctx.beginPath(); ctx.moveTo(pA[0], pA[1]); ctx.lineTo(pB[0], pB[1]); ctx.stroke();
   }
 
   /* membrane edge outline — at φ>0 this is the catenary cord itself */
@@ -509,16 +521,14 @@ function drawMembrane(cv, d, gEnv, amp) {
     }
   }
 
-  /* corner tabs + boom pull stubs */
+  /* corner tabs + boom pull stubs (world-space, so they orbit correctly) */
   ctx.fillStyle = TH.ink; ctx.strokeStyle = TH.ink2; ctx.lineWidth = 1;
-  const corners = [[0, 0, -1, -1], [nn - 1, 0, 1, -1], [0, nn - 1, -1, 1], [nn - 1, nn - 1, 1, 1]];
-  for (const [ci, cj, sx, sy] of corners) {
+  for (const [ci, cj] of [[0, 0], [nn - 1, 0], [0, nn - 1], [nn - 1, nn - 1]]) {
     const n = cj * nn + ci;
-    const bx = (sx - sy) * KX, by = (sx + sy) * KY;
-    const bl = 0.05 * L * sc / Math.hypot(bx, by);
-    ctx.beginPath(); ctx.moveTo(px[n], py[n]);
-    ctx.lineTo(px[n] + bx * bl, py[n] + by * bl); ctx.stroke();
-    ctx.beginPath(); ctx.arc(px[n] + bx * bl, py[n] + by * bl, 1.8, 0, 7); ctx.fill();
+    const dx = (ci ? 1 : -1) * Math.SQRT1_2, dy = (cj ? 1 : -1) * Math.SQRT1_2;
+    const p1 = proj(wx[n] + dx * 0.07 * L, wy[n] + dy * 0.07 * L, 0);
+    ctx.beginPath(); ctx.moveTo(px[n], py[n]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+    ctx.beginPath(); ctx.arc(p1[0], p1[1], 1.8, 0, 7); ctx.fill();
     ctx.fillRect(px[n] - 2, py[n] - 2, 4, 4);
   }
 
@@ -527,7 +537,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   ctx.textAlign = 'right';
   ctx.fillText((!gEnv ? 'sunlight only · ' : d.g < 1e-4 ? 'no gravity load · ' : '') +
     'vertical sag ×' + fmt(EXZ, 0) + (compress < 0.98 ? ' (compressed)' : '') +
-    ' · in-plane true scale', w - 4, h - 4);
+    ' · drag to orbit', w - 4, h - 4);
 }
 
 /* ------------------------- mid-span section chart ----------------------- */
@@ -552,7 +562,8 @@ function drawSection() {
       ideal.push(shapes.whatR[mid * nn + i] * d.wScale * 1e3 * refNorm * anim.gAmp.v);
     }
   }
-  const ymax = niceCeil(Math.max(1, truth ? Math.max(...truth, ...ideal) : 1));
+  /* continuous scale (no stepped snapping) so drags feel fluid */
+  const ymax = Math.max(1, truth ? Math.max(...truth, ...ideal) * 1.06 : 1);
   const X = i => m.l + (i / (CFG.nn - 1)) * pw;
   const Y = v => m.t + (v / ymax) * ph;
 
@@ -623,8 +634,8 @@ function drawChart() {
   const Fmin = 20, Fmax = 1000;
   const kIdeal = d.sigma * d.g * d.L * d.L / (2 * Math.sqrt(Math.PI)) * 1e3; // mrad·N
   const kTruth = shapes ? shapes.coeffs.ST * d.sigma * d.g * d.L * d.L * 1e3 : NaN;
-  const ymax = niceCeil(Math.min(40, Math.max(2.5 * state.tgt, kIdeal / Math.max(d.F, Fmin) * 1.3,
-    shapes ? kTruth / Math.max(d.F, Fmin) * 1.15 : 0, 4)));
+  const ymax = Math.min(40, Math.max(2.5 * state.tgt, kIdeal / Math.max(d.F, Fmin) * 1.3,
+    shapes ? kTruth / Math.max(d.F, Fmin) * 1.15 : 0, 4));
   const X = F => m.l + (F / Fmax) * pw;
   const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
 
@@ -719,13 +730,6 @@ function drawChart() {
   }
 }
 
-function niceCeil(v) {
-  if (!isFinite(v) || v <= 0) return 1;
-  const e = Math.pow(10, Math.floor(Math.log10(v)));
-  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * e >= v) return m * e;
-  return 10 * e;
-}
-
 /* ------------------------- slew billow chart -----------------------------
  * Repointing in orbit: an overhead tracking pass at line-of-sight rate omega
  * peaks at angular acceleration alpha ≈ 0.65·omega². The tangential
@@ -751,7 +755,7 @@ function drawSlew() {
 
   const OMAX = 5;
   const srp = shapes.coeffs.ST * d.sScaleSun * 1e3;
-  const ymax = niceCeil(Math.max(spaceTotalMrad(d, OMAX) * 1.15, srp * 2, 1e-6));
+  const ymax = Math.max(spaceTotalMrad(d, OMAX) * 1.15, srp * 2, 1e-6);
   const X = o => m.l + (o / OMAX) * pw;
   const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
 
@@ -919,9 +923,7 @@ function drawSlewAnim() {
 }
 
 function drawAll() {
-  const d = derived();
-  drawMembrane(els.g.cv, d, true, anim.gAmp.v);
-  drawMembrane(els.s.cv, d, false, 1);
+  drawHero();
   drawSection();
   drawChart();
   drawSlew();
@@ -998,6 +1000,35 @@ function wireHover(cv, key, redraw) {
 wireHover(els.cvSec, 'sec', drawSection);
 wireHover(els.cvChart, 'chart', drawChart);
 wireHover(els.cvSlew, 'slew', drawSlew);
+
+/* drag to orbit the hero mirrors — one shared camera keeps them comparable */
+function drawHero() {
+  const d = derived();
+  drawMembrane(els.g.cv, d, true, anim.gAmp.v);
+  drawMembrane(els.s.cv, d, false, 1);
+}
+function wireOrbit(cv) {
+  let last = null;
+  cv.style.cursor = 'grab';
+  cv.style.touchAction = 'none';
+  cv.addEventListener('pointerdown', e => {
+    last = [e.clientX, e.clientY];
+    cv.setPointerCapture(e.pointerId);
+    cv.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  cv.addEventListener('pointermove', e => {
+    if (!last) return;
+    cam.az += (e.clientX - last[0]) * 0.008;
+    cam.el = Math.min(1.25, Math.max(0.12, cam.el + (e.clientY - last[1]) * 0.006));
+    last = [e.clientX, e.clientY];
+    drawHero();
+  });
+  for (const ev of ['pointerup', 'pointercancel'])
+    cv.addEventListener(ev, () => { last = null; cv.style.cursor = 'grab'; });
+}
+wireOrbit(els.g.cv);
+wireOrbit(els.s.cv);
 
 /* resize */
 new ResizeObserver(() => drawAll()).observe(document.querySelector('main'));

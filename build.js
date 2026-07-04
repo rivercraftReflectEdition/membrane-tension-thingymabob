@@ -9,6 +9,7 @@ const path = require('path');
 const read = f => fs.readFileSync(path.join(__dirname, f), 'utf8');
 
 const html = read('src/template.html')
+  .replace('/*__FONTS__*/', () => read('src/fonts.css').trim())
   .replace('/*__STYLES__*/', () => read('src/styles.css').trim())
   .replace('/*__CORE__*/', () =>
     '/* @physics-core-begin */\n' + read('src/physics-core.js').trim() + '\n/* @physics-core-end */')
