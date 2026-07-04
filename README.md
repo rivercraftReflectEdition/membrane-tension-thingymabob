@@ -104,12 +104,26 @@ The hero panels draw sag at a fixed ×50 vertical exaggeration (smoothly
 compressed once the drawn amplitude would exceed ~24 % of the side), so the
 membrane flattens continuously as tension rises — no rescale jumps.
 
+### Corner attachment
+
+Load enters the film over a finite patch (~3 % of the side), not a point —
+physically the reinforced bar/tab the film bonds to. At mini-mirror scale
+(L ≈ 2 m) that patch is ~60 mm, i.e. the real ~50 mm attachment bar; the
+model's symmetric equal split of load into the two edges is exactly what a
+self-centering pulley enforces. A point attachment is also numerically
+ill-posed (corner slopes diverge with mesh refinement), so the finite patch
+is doing double duty. At large L the patch is generous (45 cm at 15 m —
+finer than the mesh can resolve anyway), which makes φ = 0 corner-region
+slopes mildly optimistic; with cords (φ > 0) the corner detail washes out.
+
 ### Defaults
 
-L = 15 m, mass = 350 g, F = 250 N/corner, φ = 10°, target 2.3 mrad,
-E = 4.4 GPa (effective coated-stack modulus; bare CP1 is ~2.1), ρ = 1430 kg/m³.
-The classic sanity numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m, 3.9 mrad, 23 mm,
-970 N @ 1 mrad) belong to the ideal-uniform reference and are tested.
+L = 15 m, mass = 836 g (→ film thickness 2.60 µm, the real coated stack),
+F = 250 N/corner, φ = 10°, target 2.3 mrad, E = 4.4 GPa (effective
+coated-stack modulus; bare CP1 is ~2.1), ρ = 1430 kg/m³. The classic sanity
+numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m, 3.9 mrad, 23 mm, 970 N @ 1 mrad)
+belong to the ideal-uniform reference at the original 350 g spec point and
+are pinned by tests.
 
 ### Out of scope (hooks noted in source)
 

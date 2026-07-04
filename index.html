@@ -220,8 +220,8 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 
   <div class="ctl">
     <div class="ctlrow"><label for="rngM">Membrane mass</label>
-      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="1000" step="1" value="350" aria-label="Membrane mass, grams"><span class="unit">g</span></span></div>
-    <input id="rngM" type="range" min="1" max="1000" step="1" value="350">
+      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="1000" step="1" value="836" aria-label="Membrane mass, grams"><span class="unit">g</span></span></div>
+    <input id="rngM" type="range" min="1" max="1000" step="1" value="836">
   </div>
 
   <div class="ctl">
@@ -241,6 +241,7 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   </div>
 
   <button class="reset" type="button" id="btnReset">reset to defaults</button>
+  <button class="reset" type="button" id="btnShare" style="margin-left:14px">copy share link</button>
 </aside>
 
 <main>
@@ -832,7 +833,8 @@ if (typeof module !== 'undefined') {
 const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
 const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only static load in space
 const SLEW_ACC = 0.65;                     // peak alpha ≈ 0.65·omega² for an overhead tracking pass
-const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 4.4, rho: 1430,
+/* massG default gives the real coated-stack film: t = m/(ρL²) = 2.60 µm */
+const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 836, tgt: 2.3, E_GPa: 4.4, rho: 1430,
                    phiDeg: 10, slew: 0.83 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
@@ -1771,6 +1773,20 @@ presetBtns.forEach(b => b.addEventListener('click', () => {
   if (!reduceMotion) anim.gAmp.v = 0.25;
   setters.g(+b.dataset.g);
 }));
+/* share the exact current state as a URL (only non-default keys) */
+$('btnShare').addEventListener('click', () => {
+  const qp = new URLSearchParams();
+  for (const [q, key] of Object.entries(QMAP))
+    if (state[key] !== DEFAULTS[key]) qp.set(q, state[key]);
+  if (document.documentElement.dataset.theme === 'dark') qp.set('theme', 'dark');
+  const url = location.href.split(/[?#]/)[0] + (qp.toString() ? '?' + qp.toString() : '');
+  const btn = $('btnShare'), old = btn.textContent;
+  const flash = msg => { btn.textContent = msg; setTimeout(() => { btn.textContent = old; }, 1500); };
+  if (navigator.clipboard && navigator.clipboard.writeText)
+    navigator.clipboard.writeText(url).then(() => flash('copied ✓'), () => flash(url));
+  else flash(url);
+});
+
 $('btnReset').addEventListener('click', () => {
   setters.F(DEFAULTS.F); setters.phiDeg(DEFAULTS.phiDeg); setters.g(DEFAULTS.g);
   setters.L(DEFAULTS.L); setters.massG(DEFAULTS.massG); setters.tgt(DEFAULTS.tgt);
