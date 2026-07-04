@@ -26,9 +26,15 @@ Edit under `src/`, run `node build.js`, commit both the source and the built
 `index.html`. The test suite verifies the built page embeds exactly
 `src/physics-core.js`.
 
-Dark mode follows the OS preference; the header button flips it. State is
-shareable via query string, e.g. `?g=1.62&F=120&phi=15&theme=dark`
-(keys: `F g L m tgt E rho phi slew theme`).
+Light theme is the default; the header button (or `?theme=dark`) flips it.
+State is shareable via query string, e.g. `?g=1.62&F=120&phi=15&theme=dark`
+(keys: `F g L m tgt E t phi grab slew theme`).
+
+Mass and film thickness are independent inputs: **mass** is the total as-built
+assembly (film + tapes + cords) and alone sets the gravity load σ = m/L²;
+**thickness** enters only through E·t (in-plane stretch, the stiffening check,
+film stress) and never changes the sag shape. Density is therefore not a
+parameter at all.
 
 ## Physics
 
@@ -104,26 +110,24 @@ The hero panels draw sag at a fixed ×50 vertical exaggeration (smoothly
 compressed once the drawn amplitude would exceed ~24 % of the side), so the
 membrane flattens continuously as tension rises — no rescale jumps.
 
-### Corner attachment
+### Corner attachment (grab width)
 
-Load enters the film over a finite patch (~3 % of the side), not a point —
-physically the reinforced bar/tab the film bonds to. At mini-mirror scale
-(L ≈ 2 m) that patch is ~60 mm, i.e. the real ~50 mm attachment bar; the
-model's symmetric equal split of load into the two edges is exactly what a
-self-centering pulley enforces. A point attachment is also numerically
-ill-posed (corner slopes diverge with mesh refinement), so the finite patch
-is doing double duty. At large L the patch is generous (45 cm at 15 m —
-finer than the mesh can resolve anyway), which makes φ = 0 corner-region
-slopes mildly optimistic; with cords (φ > 0) the corner detail washes out.
+Load enters the film over a finite patch — physically the little bar/tab the
+film bonds to, pulled through a self-centering pulley (whose equal split into
+the two edges is exactly the model's symmetry assumption). The **grab width**
+control sets that patch as a percentage of the side (default 3 %; the note
+under it converts to mm at the current size — ~60 mm on a 2 m mini). A point
+attachment would also be numerically ill-posed (corner slopes diverge with
+mesh refinement), so the finite patch is physical and regularizing at once.
+With cords (φ > 0) the corner detail largely washes out; at φ = 0 it matters.
 
 ### Defaults
 
-L = 15 m, mass = 836 g (→ film thickness 2.60 µm, the real coated stack),
-F = 250 N/corner, φ = 10°, target 2.3 mrad, E = 4.4 GPa (effective
-coated-stack modulus; bare CP1 is ~2.1), ρ = 1430 kg/m³. The classic sanity
-numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m, 3.9 mrad, 23 mm, 970 N @ 1 mrad)
-belong to the ideal-uniform reference at the original 350 g spec point and
-are pinned by tests.
+L = 15 m, total mass = 350 g, film t = 2.6 µm, F = 250 N/corner, φ = 10°,
+grab 3 %, target 2.3 mrad, E = 4.4 GPa (effective coated-stack modulus; bare
+CP1 is ~2.1). The classic sanity numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m,
+3.9 mrad, 23 mm, 970 N @ 1 mrad) belong to the ideal-uniform reference at
+this spec point and are pinned by tests.
 
 ### Out of scope (hooks noted in source)
 

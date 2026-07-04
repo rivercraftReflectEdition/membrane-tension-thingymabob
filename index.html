@@ -176,7 +176,6 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   <div class="hright">
     <button type="button" class="themebtn" id="themeBtn" aria-label="Switch theme">dark</button>
     <div class="chips" role="group" aria-label="Derived film properties">
-      <div class="chip"><span class="lbl">film thickness</span><span class="val" id="chipT">—</span></div>
       <div class="chip"><span class="lbl">areal density</span><span class="val" id="chipSig">—</span></div>
       <div class="chip"><span class="lbl">film stress</span><span class="val" id="chipStress">—</span></div>
     </div>
@@ -201,6 +200,13 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   </div>
 
   <div class="ctl">
+    <div class="ctlrow"><label for="rngGrab">Grab width</label>
+      <span class="ctlval"><input class="num" id="numGrab" type="number" min="1" max="10" step="0.5" value="3" aria-label="Corner grab bar width, percent of side"><span class="unit">%</span></span></div>
+    <input id="rngGrab" type="range" min="1" max="10" step="0.5" value="3">
+    <div class="ctlnote">corner bar the film bonds to · <span id="grabNote">—</span></div>
+  </div>
+
+  <div class="ctl">
     <div class="ctlrow"><label for="rngG">Gravity</label>
       <span class="ctlval"><input class="num" id="numG" type="number" min="0" max="9.81" step="0.01" value="9.81" aria-label="Gravity, meters per second squared"><span class="unit">m/s²</span></span></div>
     <input id="rngG" type="range" min="0" max="9.81" step="0.01" value="9.81">
@@ -220,8 +226,9 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 
   <div class="ctl">
     <div class="ctlrow"><label for="rngM">Membrane mass</label>
-      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="1000" step="1" value="836" aria-label="Membrane mass, grams"><span class="unit">g</span></span></div>
-    <input id="rngM" type="range" min="1" max="1000" step="1" value="836">
+      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="3000" step="1" value="350" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
+    <input id="rngM" type="range" min="1" max="3000" step="1" value="350">
+    <div class="ctlnote">total as-built mass — film, tapes, cords; this is what gravity pulls on</div>
   </div>
 
   <div class="ctl">
@@ -229,19 +236,18 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
       <span class="ctlval"><input class="num" id="numTgt" type="number" min="0.1" max="20" step="0.1" value="2.3" aria-label="Target RMS slope error, milliradians"><span class="unit">mrad</span></span></div>
   </div>
 
-  <h2 style="margin-top:18px">Film — CP1 defaults</h2>
+  <h2 style="margin-top:18px">Film — CP1 stack</h2>
   <div class="ctl">
     <div class="ctlrow"><label for="numE">Young’s modulus E</label>
       <span class="ctlval"><input class="num" id="numE" type="number" min="0.1" max="500" step="0.1" value="4.4" aria-label="Young's modulus, gigapascals"><span class="unit">GPa</span></span></div>
   </div>
   <div class="ctl">
-    <div class="ctlrow"><label for="numRho">Density ρ</label>
-      <span class="ctlval"><input class="num" id="numRho" type="number" min="500" max="5000" step="10" value="1430" aria-label="Film density, kilograms per cubic meter"><span class="unit">kg/m³</span></span></div>
-    <div class="ctlnote">E sets in-plane strain (edge scallop); the sag shape depends only on tension and gravity. ρ sets thickness.</div>
+    <div class="ctlrow"><label for="numT">Film thickness</label>
+      <span class="ctlval"><input class="num" id="numT" type="number" min="0.5" max="100" step="0.1" value="2.6" aria-label="Film thickness, micrometers"><span class="unit">µm</span></span></div>
+    <div class="ctlnote">E·t sets in-plane stretch (scallop, stiffening) and film stress — not the sag shape</div>
   </div>
 
   <button class="reset" type="button" id="btnReset">reset to defaults</button>
-  <button class="reset" type="button" id="btnShare" style="margin-left:14px">copy share link</button>
 </aside>
 
 <main>
@@ -833,15 +839,18 @@ if (typeof module !== 'undefined') {
 const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
 const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only static load in space
 const SLEW_ACC = 0.65;                     // peak alpha ≈ 0.65·omega² for an overhead tracking pass
-/* massG default gives the real coated-stack film: t = m/(ρL²) = 2.60 µm */
-const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 836, tgt: 2.3, E_GPa: 4.4, rho: 1430,
-                   phiDeg: 10, slew: 0.83 };
+/* massG = TOTAL as-built mass (film + tapes + cords) — it alone sets the
+ * gravity load. tUm = film thickness, a direct input: it only enters through
+ * E·t (in-plane stretch, stiffening, film stress), never the sag shape. */
+const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 4.4, tUm: 2.6,
+                   phiDeg: 10, grabPct: 3, slew: 0.83 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
-const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho',
-               phi: 'phiDeg', slew: 'slew' };
-const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [1, 1000], tgt: [0.1, 20],
-               E_GPa: [0.1, 500], rho: [500, 5000], phiDeg: [0, 45], slew: [0, 5] };
+const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', t: 'tUm',
+               phi: 'phiDeg', grab: 'grabPct', slew: 'slew' };
+const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [1, 3000], tgt: [0.1, 20],
+               E_GPa: [0.1, 500], tUm: [0.5, 100], phiDeg: [0, 45], grabPct: [1, 10],
+               slew: [0, 5] };
 {
   const qs = new URLSearchParams(location.search);
   for (const [q, key] of Object.entries(QMAP)) {
@@ -887,7 +896,7 @@ function setTheme(name) {
 
 const $ = id => document.getElementById(id);
 const els = {
-  chips: { t: $('chipT'), sig: $('chipSig'), stress: $('chipStress') },
+  chips: { sig: $('chipSig'), stress: $('chipStress') },
   g: {
     slope: $('stGslope'), slopeI: $('stGslopeI'), sag: $('stGsag'), sagI: $('stGsagI'),
     ten: $('stGten'), note: $('stGnote'), cv: $('cvG'), lbl: $('lblG'),
@@ -913,14 +922,14 @@ const unit = (s) => ` <small>${s}</small>`;
 /* ------------------------------ physics glue ---------------------------- */
 function derived() {
   const L = state.L, mass = state.massG / 1000, F = state.F;
-  const g = state.g, E = state.E_GPa * 1e9, rho = state.rho;
-  const sigma = analytic.sigma(mass, L);
-  const t = analytic.thick(mass, rho, L);
+  const g = state.g, E = state.E_GPa * 1e9;
+  const sigma = analytic.sigma(mass, L);               // total mass / area — the gravity load
+  const t = state.tUm * 1e-6;                          // film thickness, direct input
   const N = analytic.tension(F, L);                    // reference convention F/(√2 L)
   const Feff = Math.max(F, 1);                         // slack guard for 1/F scales
   const p = analytic.pressure(sigma, g);
   return {
-    L, mass, F, g, E, rho, sigma, t, N, p,
+    L, mass, F, g, E, sigma, t, N, p,
     sScale: sigma * g * L * L / Feff,                  // rad per unit slope coeff (gravity)
     wScale: sigma * g * L * L * L / Feff,              // m per unit ŵ (gravity)
     sScaleSun: P_SUN * L * L / Feff,                   // same, solar pressure only (space)
@@ -951,9 +960,14 @@ function packShapes(sh) {
   };
 }
 const solver = { cache: new Map(), busy: false, queued: null, worker: null };
-const phiKey = () => Math.round(state.phiDeg);
+/* the dimensionless solve depends on the cord angle AND the grab width */
+const solveKey = () => Math.round(state.phiDeg) + '|' + Math.round(state.grabPct * 2);
+function msgFor(key) {
+  const [phiK, grabK2] = key.split('|').map(Number);
+  return { ...CFG, key, phiKey: phiK, phi: phiK * Math.PI / 180, rTab: grabK2 / 200 };
+}
 function requestShapes() {
-  const k = phiKey();
+  const k = solveKey();
   if (solver.cache.has(k)) {
     if (shapes !== solver.cache.get(k)) { applyShapes(solver.cache.get(k), false); }
     els.phiStatus.textContent = '';
@@ -965,19 +979,19 @@ function requestShapes() {
 }
 function pumpSolver() {
   if (solver.busy || solver.queued === null) return;
-  const k = solver.queued; solver.queued = null; solver.busy = true;
-  const msg = { ...CFG, phi: k * Math.PI / 180, phiKey: k };
+  const msg = msgFor(solver.queued);
+  solver.queued = null; solver.busy = true;
   if (solver.worker) solver.worker.postMessage(msg);
   else setTimeout(() => {                                // no-worker fallback
     const sh = buildShapes(msg.nn, msg.nu, msg);
-    const p = packShapes(sh); p.phiKey = k;
+    const p = packShapes(sh); p.phiKey = msg.phiKey; p.key = msg.key;
     onSolved(p);
   }, 30);
 }
 function onSolved(p) {
   solver.busy = false;
-  solver.cache.set(p.phiKey, p);
-  if (p.phiKey === phiKey() && solver.queued === null) {
+  solver.cache.set(p.key, p);
+  if (p.key === solveKey() && solver.queued === null) {
     els.phiStatus.textContent = '';
     applyShapes(p, !shapes);
   }
@@ -1008,7 +1022,7 @@ function elemSlopesOf(what, mesh) {
   try {
     const src = document.getElementById('physics-core').textContent +
       ';self.onmessage=function(e){var sh=buildShapes(e.data.nn,e.data.nu,e.data);' +
-      'var p=(' + packShapes.toString() + ')(sh);p.phiKey=e.data.phiKey;' +
+      'var p=(' + packShapes.toString() + ')(sh);p.phiKey=e.data.phiKey;p.key=e.data.key;' +
       'postMessage(p,[p.whatT.buffer,p.slopesT.buffer,p.whatS.buffer,p.whatR.buffer,' +
       'p.slopesR.buffer,p.uhat.buffer,p.wstate.buffer,p.thetaW.buffer]);};';
     solver.worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
@@ -1017,7 +1031,7 @@ function elemSlopesOf(what, mesh) {
      * re-queuing the angle we were waiting for */
     const failover = () => {
       solver.worker = null; solver.busy = false;
-      if (solver.queued === null) solver.queued = phiKey();
+      if (solver.queued === null) solver.queued = solveKey();
       pumpSolver();
     };
     solver.worker.onerror = failover;
@@ -1042,9 +1056,9 @@ function scheduleTick() { if (!anim.raf) anim.raf = requestAnimationFrame(tick);
 function update() {
   const d = derived();
 
-  /* chips */
-  els.chips.t.textContent = fmt(d.t * 1e6, 2) + ' µm';
+  /* chips + grab-width note */
   els.chips.sig.textContent = fmt(d.sigma * 1e3, 2) + ' g/m²';
+  $('grabNote').textContent = '≈ ' + fmt(state.grabPct / 100 * d.L * 1000, 0) + ' mm at current size';
   els.chips.stress.textContent = d.t > 0 ? fmtAuto(d.N / d.t / 1e6) + ' MPa' : '—';
 
   /* per-environment readouts (ground = current g, space = 0) */
@@ -1741,12 +1755,13 @@ function bindPair(rngId, numId, key) {
 const setters = {
   F: bindPair('rngF', 'numF', 'F'),
   phiDeg: bindPair('rngPhi', 'numPhi', 'phiDeg'),
+  grabPct: bindPair('rngGrab', 'numGrab', 'grabPct'),
   g: bindPair('rngG', 'numG', 'g'),
   L: bindPair('rngL', 'numL', 'L'),
   massG: bindPair('rngM', 'numM', 'massG'),
   tgt: bindPair(null, 'numTgt', 'tgt'),
   E_GPa: bindPair(null, 'numE', 'E_GPa'),
-  rho: bindPair(null, 'numRho', 'rho'),
+  tUm: bindPair(null, 'numT', 'tUm'),
   slew: bindPair('rngSlew', 'numSlew', 'slew'),
 };
 
@@ -1762,7 +1777,7 @@ function onControl(key, live) {
         }
     presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
   }
-  if (key === 'phiDeg') requestShapes();               // may need a fresh solve
+  if (key === 'phiDeg' || key === 'grabPct') requestShapes();   // may need a fresh solve
   anim.gAmp.t = 1;
   update();
   scheduleTick();
@@ -1773,24 +1788,8 @@ presetBtns.forEach(b => b.addEventListener('click', () => {
   if (!reduceMotion) anim.gAmp.v = 0.25;
   setters.g(+b.dataset.g);
 }));
-/* share the exact current state as a URL (only non-default keys) */
-$('btnShare').addEventListener('click', () => {
-  const qp = new URLSearchParams();
-  for (const [q, key] of Object.entries(QMAP))
-    if (state[key] !== DEFAULTS[key]) qp.set(q, state[key]);
-  if (document.documentElement.dataset.theme === 'dark') qp.set('theme', 'dark');
-  const url = location.href.split(/[?#]/)[0] + (qp.toString() ? '?' + qp.toString() : '');
-  const btn = $('btnShare'), old = btn.textContent;
-  const flash = msg => { btn.textContent = msg; setTimeout(() => { btn.textContent = old; }, 1500); };
-  if (navigator.clipboard && navigator.clipboard.writeText)
-    navigator.clipboard.writeText(url).then(() => flash('copied ✓'), () => flash(url));
-  else flash(url);
-});
-
 $('btnReset').addEventListener('click', () => {
-  setters.F(DEFAULTS.F); setters.phiDeg(DEFAULTS.phiDeg); setters.g(DEFAULTS.g);
-  setters.L(DEFAULTS.L); setters.massG(DEFAULTS.massG); setters.tgt(DEFAULTS.tgt);
-  setters.E_GPa(DEFAULTS.E_GPa); setters.rho(DEFAULTS.rho); setters.slew(DEFAULTS.slew);
+  for (const key of Object.keys(setters)) setters[key](DEFAULTS[key]);
 });
 
 /* hover wiring */
@@ -1807,8 +1806,8 @@ new ResizeObserver(() => drawAll()).observe(document.querySelector('main'));
 
 /* reflect (possibly query-overridden) state into the controls */
 for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngPhi', 'numPhi'], 'phiDeg'],
-  [['rngG', 'numG'], 'g'], [['rngL', 'numL'], 'L'], [['rngM', 'numM'], 'massG'],
-  [['numTgt'], 'tgt'], [['numE'], 'E_GPa'], [['numRho'], 'rho'],
+  [['rngGrab', 'numGrab'], 'grabPct'], [['rngG', 'numG'], 'g'], [['rngL', 'numL'], 'L'],
+  [['rngM', 'numM'], 'massG'], [['numTgt'], 'tgt'], [['numE'], 'E_GPa'], [['numT'], 'tUm'],
   [['rngSlew', 'numSlew'], 'slew']])
   for (const id of ids) $(id).value = state[key];
 presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
