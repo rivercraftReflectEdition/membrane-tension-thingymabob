@@ -77,5 +77,26 @@ for (const [k, v] of Object.entries({
   thetaW: sh.inPlane.thetaW.length, state: sh.inPlane.state.length,
 })) if (v !== 1600) { console.log('FAIL renderer field ' + k + ' length ' + v); failures++; }
 
+console.log('--- catenary edge cords ---');
+/* interior tension must match the closed form q = sqrt(2)·F·sin(phi)/(L·(cos+sin));
+ * at phi = 45° the cords reproduce the conventional N = F/(sqrt(2)·L) exactly */
+for (const deg of [10, 45]) {
+  const phi = deg * Math.PI / 180;
+  const shc = core.buildShapes(41, 0.34, { maxIter: 30, floorFrac: 0.02, phi });
+  const mid = 20 * 40 + 20;
+  const qExp = Math.SQRT2 * Math.sin(phi) / (Math.cos(phi) + Math.sin(phi));
+  check('phi=' + deg + ' interior tension', shc.inPlane.nhat[mid * 3], qExp, 0.05);
+  if (deg === 45)
+    check('phi=45 RMS coeff -> analytic uniform', shc.truth.rmsSlopeCoeff, 0.2821, 0.15);
+  if (deg === 10) {
+    check('phi=10 RMS coeff (regression)', shc.truth.rmsSlopeCoeff, 0.887, 0.08);
+    /* slew shape: antisymmetric billow about the centerline */
+    const c = shc.slew.what[(41 * 41 - 1) / 2];
+    if (Math.abs(c) > 1e-9) { console.log('FAIL slew centerline not ~0: ' + c); failures++; }
+    else console.log('PASS slew shape antisymmetric (centerline ~0)');
+    check('phi=10 slew RMS coeff (regression)', shc.slew.rmsSlopeCoeff, 0.148, 0.08);
+  }
+}
+
 console.log(failures ? '\n' + failures + ' FAILURE(S)' : '\nall checks passed');
 process.exit(failures ? 1 : 0);

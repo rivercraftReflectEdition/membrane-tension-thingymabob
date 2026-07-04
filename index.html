@@ -127,10 +127,12 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 .chart canvas{width:100%;display:block;margin-top:6px}
 #cvSec{aspect-ratio:16/9}
 #cvChart{aspect-ratio:16/8}
-
-/* footnotes */
-.notes{margin-top:18px;font-size:12.5px;color:var(--ink2);line-height:1.7;max-width:72em}
-.notes b{color:var(--ink);font-weight:600}
+.row3{margin-top:16px}
+#cvSlew{aspect-ratio:16/4.5}
+.slewctl{display:flex;align-items:baseline;gap:12px;margin-top:8px;flex-wrap:wrap}
+.slewctl label{font-size:13px}
+.slewctl input[type=range]{flex:1;min-width:120px;margin-top:0;align-self:center}
+.slewout{font-size:12px;color:var(--ink2)}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -142,7 +144,6 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   <div>
     <div class="kicker">Corner-tensioned membrane mirror</div>
     <h1>Gravity vs. flatness</h1>
-    <p class="sub">Same film, same corner pull — bowed on the ground, flat in orbit.</p>
   </div>
   <div class="chips" role="group" aria-label="Derived film properties">
     <div class="chip"><span class="lbl">film thickness</span><span class="val" id="chipT">—</span></div>
@@ -159,6 +160,13 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
     <div class="ctlrow"><label for="rngF">Corner force</label>
       <span class="ctlval"><input class="num" id="numF" type="number" min="0" max="1000" step="5" value="250" aria-label="Corner force, newtons"><span class="unit">N</span></span></div>
     <input id="rngF" type="range" min="0" max="1000" step="5" value="250">
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngPhi">Catenary half-angle</label>
+      <span class="ctlval"><input class="num" id="numPhi" type="number" min="0" max="45" step="1" value="10" aria-label="Catenary cord arc half-angle, degrees"><span class="unit">°</span></span></div>
+    <input id="rngPhi" type="range" min="0" max="45" step="1" value="10">
+    <div class="ctlnote">edge-cord arc angle · 0° = direct corner attach <span class="solving" id="phiStatus"></span></div>
   </div>
 
   <div class="ctl">
@@ -188,13 +196,12 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   <div class="ctl">
     <div class="ctlrow"><label for="numTgt">Target slope error</label>
       <span class="ctlval"><input class="num" id="numTgt" type="number" min="0.1" max="20" step="0.1" value="2.3" aria-label="Target RMS slope error, milliradians"><span class="unit">mrad</span></span></div>
-    <div class="ctlnote">2.3 mrad ≈ solar-disk floor (2σ = solar half-angle)</div>
   </div>
 
   <h2 style="margin-top:18px">Film — CP1 defaults</h2>
   <div class="ctl">
     <div class="ctlrow"><label for="numE">Young’s modulus E</label>
-      <span class="ctlval"><input class="num" id="numE" type="number" min="0.1" max="500" step="0.1" value="2.1" aria-label="Young's modulus, gigapascals"><span class="unit">GPa</span></span></div>
+      <span class="ctlval"><input class="num" id="numE" type="number" min="0.1" max="500" step="0.1" value="4.4" aria-label="Young's modulus, gigapascals"><span class="unit">GPa</span></span></div>
   </div>
   <div class="ctl">
     <div class="ctlrow"><label for="numRho">Density ρ</label>
@@ -254,8 +261,8 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
     <figure class="chart">
       <figcaption>Mid-span section</figcaption>
       <div class="legend">
-        <span><span class="sw accent"></span>corner-load FEM</span>
-        <span><span class="sw dash"></span>uniform-tension ideal</span>
+        <span><span class="sw accent"></span>FEM</span>
+        <span><span class="sw dash"></span>uniform ideal</span>
         <span><span class="sw space"></span>space</span>
       </div>
       <canvas id="cvSec" role="img" aria-label="Cross-section of the sagging membrane at mid-span"></canvas>
@@ -264,18 +271,25 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
       <figcaption>RMS slope vs corner force</figcaption>
       <div class="legend">
         <span><span class="sw accent"></span>ground — FEM</span>
-        <span><span class="sw dash"></span>ground — uniform ideal</span>
+        <span><span class="sw dash"></span>ground — ideal</span>
         <span><span class="sw space"></span>space</span>
       </div>
       <canvas id="cvChart" role="img" aria-label="RMS slope error versus corner force, ground and space"></canvas>
     </figure>
   </section>
 
-  <footer class="notes">
-    <div><b>Model.</b> Tension-only membrane, N∇²w = −p — ground p = σg, space p = 9.1 µPa of sunlight. FEM = corner-loaded film with wrinkling, held at the corner tabs. Ideal = uniform-tension drumhead, N = F⁄(√2·L).</div>
-    <div><b>Why FEM reads flatter.</b> No uniform tension can balance four corner pulls — the interior actually carries ≈1.55× N while the free edges scallop and droop.</div>
-    <div><b>Not modeled.</b> Thermal wrinkling · boom buckling · edge catenary cords.</div>
-  </footer>
+  <section class="row3">
+    <figure class="chart">
+      <figcaption>Slew billow — in space</figcaption>
+      <div class="slewctl">
+        <label for="rngSlew">Slew rate</label>
+        <input id="rngSlew" type="range" min="0" max="5" step="0.01" value="0.83">
+        <span class="ctlval"><input class="num" id="numSlew" type="number" min="0" max="5" step="0.01" value="0.83" aria-label="Slew rate, degrees per second"><span class="unit">°/s</span></span>
+        <span class="mono slewout" id="slewOut">—</span>
+      </div>
+      <canvas id="cvSlew" role="img" aria-label="RMS slope error versus slew rate in space"></canvas>
+    </figure>
+  </section>
 </main>
 </div>
 
@@ -404,6 +418,7 @@ function solveInPlane(mesh, nu, opts = {}) {
   const rTab    = opts.rTab    ?? 0.03;               // corner tab radius (fraction of side) —
                                                       // real corners are reinforced tabs/cords,
                                                       // not points; also regularizes the FEM
+  const phi     = opts.phi     ?? 0;                  // catenary cord arc half-angle (rad); 0 = no cords
   const ndof = nodes * 2;
   const bw = 2 * (nn + 1) + 1;
 
@@ -415,9 +430,25 @@ function solveInPlane(mesh, nu, opts = {}) {
       Dm[e * 9 + r * 3 + c] = Dtaut[r][c];
   const state = new Int8Array(ne);                    // 0 taut, 1 wrinkled, 2 slack
 
-  /* corner loads: unit force per corner, outward along the diagonal, spread
-   * over the tab nodes (all nodes within rTab of the corner) with a linear
-   * taper — the hardware analogue is the reinforced corner tab + cords */
+  /* Load system. Two attachment schemes:
+   *
+   * phi = 0 — direct corner attach: unit force per corner, outward along the
+   * diagonal, spread over the tab nodes (all nodes within rTab) with a linear
+   * taper.
+   *
+   * phi > 0 — catenary edge cords: each edge is scalloped as a circular arc
+   * of half-angle phi with a cord along it. Corner balance (two cord ends at
+   * 45°∓phi from the boom diagonal) gives the cord tension
+   *      T = F / (√2·(cos phi + sin phi))
+   * and Young–Laplace turns cord tension into an outward normal line load on
+   * the film edge, q = T/R with R = L/(2·sin phi):
+   *      q = 2·T·sin phi / L
+   * The boom force and the two cord-end pulls cancel at the tab, so the film
+   * sees pure distributed edge traction — this is exactly what catenaries are
+   * for. (At phi → 0 a straight cord routes the boom force corner-to-corner
+   * without tensioning the film at all; the film goes slack. Real.)
+   * Square-domain approximation: the traction acts on the straight edge; the
+   * few-percent scallop depth is drawn but not meshed. */
   const f = new Float64Array(ndof);
   const c = Math.SQRT1_2;
   const cxy = [[0, 0], [1, 0], [0, 1], [1, 1]];
@@ -429,12 +460,25 @@ function solveInPlane(mesh, nu, opts = {}) {
       const d = Math.hypot(i * h - cxy[k][0], j * h - cxy[k][1]);
       if (d <= rTab + 1e-12) { ids.push(j * nn + i); w.push(1 - d / (rTab * 1.0001)); }
     }
-    const wsum = w.reduce((a, b) => a + b, 0);
-    for (let m = 0; m < ids.length; m++) {
-      f[2 * ids[m]]     += dir[k][0] * w[m] / wsum;
-      f[2 * ids[m] + 1] += dir[k][1] * w[m] / wsum;
+    if (phi <= 0) {
+      const wsum = w.reduce((a, b) => a + b, 0);
+      for (let m = 0; m < ids.length; m++) {
+        f[2 * ids[m]]     += dir[k][0] * w[m] / wsum;
+        f[2 * ids[m] + 1] += dir[k][1] * w[m] / wsum;
+      }
     }
     tabNodes.push(...ids);
+  }
+  const cordT = phi > 0 ? 1 / (Math.SQRT2 * (Math.cos(phi) + Math.sin(phi))) : 0;
+  if (phi > 0) {
+    const q = 2 * cordT * Math.sin(phi);               // per unit length, outward normal
+    const qh = q * h / 2;                              // consistent nodal load per segment end
+    for (let i = 0; i < nn - 1; i++) {
+      for (const n of [i, i + 1])                f[2 * n + 1]                    -= qh; // bottom, (0,-1)
+      for (const n of [i, i + 1])                f[2 * ((nn - 1) * nn + n) + 1]  += qh; // top, (0,+1)
+      for (const j of [i, i + 1])                f[2 * (j * nn)]                 -= qh; // left, (-1,0)
+      for (const j of [i, i + 1])                f[2 * (j * nn + nn - 1)]        += qh; // right, (+1,0)
+    }
   }
 
   /* pin rigid-body modes at the center node (+ one rotation dof) —
@@ -564,19 +608,25 @@ function solveInPlane(mesh, nu, opts = {}) {
   const thetaW = new Float64Array(ne);
   for (let e = 0; e < ne; e++)
     thetaW[e] = 0.5 * Math.atan2(strains[e * 3 + 2], strains[e * 3] - strains[e * 3 + 1]);
-  return { nhat: stresses, uhat: u, state, thetaW, tabNodes, iters, lastChanged, maxDD };
+  return { nhat: stresses, uhat: u, state, thetaW, tabNodes, cordT, iters, lastChanged, maxDD };
 }
 
 /* ============================================================================
- * OUT-OF-PLANE: div(nhat grad what) = -1, given a per-element tension field.
+ * OUT-OF-PLANE: div(nhat grad what) = -rhs, given a per-element tension field.
  * bc: 'corners' (pinned at the 4 boom attachments — the truth model) or
  *     'edges'   (classical drumhead — the uniform-tension reference).
+ * opts.cordT  — edge-cord tension: adds tensioned-string stiffness T·w'' along
+ *               the boundary (the catenary cord also carries transverse load).
+ * opts.load   — 'uniform' (gravity/solar pressure, rhs = 1) or
+ *               'slew' (rigid slew angular acceleration about the vertical
+ *               centerline: rhs = xi - 1/2, antisymmetric billow).
  * Principal tensions are floored at nFloor so wrinkled/slack regions stay
  * SPD; physically the wrinkle direction still carries tension, and the
  * cross direction's true stiffness is small but nonzero.
  * ==========================================================================*/
-function solveOutOfPlane(mesh, nfield, bc, nFloor, tabNodes) {
+function solveOutOfPlane(mesh, nfield, bc, nFloor, tabNodes, opts = {}) {
   const { nn, h, nodes, ne, elems } = mesh;
+  const slew = opts.load === 'slew';
   const bw = nn + 1;
   const B = new Float64Array(nodes * (bw + 1));
   const f = new Float64Array(nodes);
@@ -596,13 +646,15 @@ function solveOutOfPlane(mesh, nfield, bc, nFloor, tabNodes) {
       nxy = (p1 - p2) * cs * sn;
     }
     const Ke = new Float64Array(16), fe = new Float64Array(4);
+    const ei = e % (nn - 1);                          // element column, for the slew arm
     for (const [xi, eta] of GP) {
       const g = shapeGrad(xi, eta, h);
+      const rhs = slew ? ((ei + (xi + 1) / 2) * h - 0.5) : 1;
       for (let a = 0; a < 4; a++) {
         for (let b = 0; b < 4; b++)
           Ke[a * 4 + b] += (g.dx[a] * (nxx * g.dx[b] + nxy * g.dy[b]) +
                             g.dy[a] * (nxy * g.dx[b] + nyy * g.dy[b])) * detJw;
-        fe[a] += g.N[a] * detJw;                      // unit pressure
+        fe[a] += g.N[a] * rhs * detJw;
       }
     }
     for (let a = 0; a < 4; a++) {
@@ -612,6 +664,22 @@ function solveOutOfPlane(mesh, nfield, bc, nFloor, tabNodes) {
         const gj = elems[e * 4 + b];
         if (gj <= gi) B[gi * (bw + 1) + (gi - gj)] += Ke[a * 4 + b];
       }
+    }
+  }
+
+  /* edge cords: tensioned strings along the boundary, pinned at the tabs */
+  if (opts.cordT > 0) {
+    const k = opts.cordT / h;
+    const seg = (n1, n2) => {
+      B[n1 * (bw + 1)] += k; B[n2 * (bw + 1)] += k;
+      const hi = Math.max(n1, n2), lo = Math.min(n1, n2);
+      B[hi * (bw + 1) + (hi - lo)] -= k;
+    };
+    for (let i = 0; i < nn - 1; i++) {
+      seg(i, i + 1);                                   // bottom
+      seg((nn - 1) * nn + i, (nn - 1) * nn + i + 1);   // top
+      seg(i * nn, (i + 1) * nn);                       // left
+      seg(i * nn + nn - 1, (i + 1) * nn + nn - 1);     // right
     }
   }
 
@@ -683,7 +751,10 @@ function buildShapes(nn, nu, opts = {}) {
   const mesh = makeMesh(nn);
   const ip = solveInPlane(mesh, nu, opts);
   const nFloor = (opts.floorFrac ?? 0.02) * Math.SQRT1_2;
-  const truth = solveOutOfPlane(mesh, ip.nhat, 'corners', nFloor, ip.tabNodes);
+  const oop = { cordT: ip.cordT };
+  const truth = solveOutOfPlane(mesh, ip.nhat, 'corners', nFloor, ip.tabNodes, oop);
+  const slew = solveOutOfPlane(mesh, ip.nhat, 'corners', nFloor, ip.tabNodes,
+                               { ...oop, load: 'slew' });
   const nuni = new Float64Array(mesh.ne * 3);
   for (let e = 0; e < mesh.ne; e++) {
     nuni[e * 3] = Math.SQRT1_2; nuni[e * 3 + 1] = Math.SQRT1_2;
@@ -692,6 +763,7 @@ function buildShapes(nn, nu, opts = {}) {
   return {
     mesh, inPlane: ip,
     truth: { what: truth, slopes: elementSlopes(mesh, truth), ...fieldMetrics(mesh, truth) },
+    slew:  { what: slew,  ...fieldMetrics(mesh, slew) },
     ref:   { what: ref,   slopes: elementSlopes(mesh, ref),   ...fieldMetrics(mesh, ref) },
   };
 }
@@ -725,11 +797,14 @@ if (typeof module !== 'undefined') {
  * ========================================================================= */
 (function () {
 const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
-const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only load in space
-const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 2.1, rho: 1430 };
+const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only static load in space
+const SLEW_ACC = 0.65;                     // peak alpha ≈ 0.65·omega² for an overhead tracking pass
+const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 4.4, rho: 1430,
+                   phiDeg: 10, slew: 0.83 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
-const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho' };
+const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho',
+               phi: 'phiDeg', slew: 'slew' };
 for (const [q, key] of Object.entries(QMAP)) {
   const v = parseFloat(new URLSearchParams(location.search).get(q));
   if (isFinite(v)) state[key] = v;
@@ -745,7 +820,8 @@ const els = {
   },
   s: { slope: $('stSslope'), sag: $('stSsag'), ten: $('stSten'), note: $('stSnote'), cv: $('cvS') },
   reqLine: $('reqLine'), reqFlag: $('reqFlag'),
-  cvSec: $('cvSec'), cvChart: $('cvChart'),
+  cvSec: $('cvSec'), cvChart: $('cvChart'), cvSlew: $('cvSlew'),
+  phiStatus: $('phiStatus'), slewOut: $('slewOut'),
 };
 
 /* ------------------------------ formatting ------------------------------ */
@@ -783,46 +859,84 @@ function derived() {
 let shapes = null;                                     // {whatT, slopesT, whatR, slopesR, uhat, wstate, thetaW, coeffs, mesh:{nn,h,ne}}
 const WC_ANALYTIC = Math.SQRT2 / (4 * Math.PI);        // ŵ_center of the analytic (circle-equiv) reference
 
-/* ------------------------------ worker ---------------------------------- */
-function onShapes(d) {
-  shapes = d;
-  document.querySelectorAll('.solving').forEach(n => n.remove());
-  anim.gAmp.v = reduceMotion ? 1 : 0;                  // grow the sag in from flat
-  anim.gAmp.t = 1;
-  update();
-  scheduleTick();
-}
-function runSync() {
-  setTimeout(() => {
-    const sh = buildShapes(CFG.nn, CFG.nu, CFG);
-    onShapes(packShapes(sh));
-  }, 30);
-}
+/* ------------------------------ worker ----------------------------------
+ * The dimensionless solve depends on ONE control: the catenary half-angle.
+ * Solves are cached per whole degree; the worker stays alive and always
+ * serves the latest requested angle (intermediate drag values are skipped). */
 function packShapes(sh) {
   return {
-    whatT: sh.truth.what, slopesT: sh.truth.slopes,
+    whatT: sh.truth.what, slopesT: sh.truth.slopes, whatS: sh.slew.what,
     whatR: sh.ref.what, slopesR: sh.ref.slopes,
     uhat: sh.inPlane.uhat, wstate: sh.inPlane.state, thetaW: sh.inPlane.thetaW,
     coeffs: {
       ST: sh.truth.rmsSlopeCoeff, PVT: sh.truth.pvCoeff, WcT: sh.truth.centerCoeff,
+      SS: sh.slew.rmsSlopeCoeff, PVS: sh.slew.pvCoeff,
       SR: sh.ref.rmsSlopeCoeff, PVR: sh.ref.pvCoeff, WcR: sh.ref.centerCoeff,
     },
     mesh: { nn: sh.mesh.nn, h: sh.mesh.h, ne: sh.mesh.ne },
   };
 }
-(function startSolve() {
+const solver = { cache: new Map(), busy: false, queued: null, worker: null };
+const phiKey = () => Math.round(state.phiDeg);
+function requestShapes() {
+  const k = phiKey();
+  if (solver.cache.has(k)) {
+    if (shapes !== solver.cache.get(k)) { applyShapes(solver.cache.get(k), false); }
+    els.phiStatus.textContent = '';
+    return;
+  }
+  els.phiStatus.textContent = '· solving…';
+  solver.queued = k;
+  pumpSolver();
+}
+function pumpSolver() {
+  if (solver.busy || solver.queued === null) return;
+  const k = solver.queued; solver.queued = null; solver.busy = true;
+  const msg = { ...CFG, phi: k * Math.PI / 180, phiKey: k };
+  if (solver.worker) solver.worker.postMessage(msg);
+  else setTimeout(() => {                                // no-worker fallback
+    const sh = buildShapes(msg.nn, msg.nu, msg);
+    const p = packShapes(sh); p.phiKey = k;
+    onSolved(p);
+  }, 30);
+}
+function onSolved(p) {
+  solver.busy = false;
+  solver.cache.set(p.phiKey, p);
+  if (p.phiKey === phiKey() && solver.queued === null) {
+    els.phiStatus.textContent = '';
+    applyShapes(p, !shapes);
+  }
+  pumpSolver();
+}
+function applyShapes(p, first) {
+  shapes = p;
+  document.querySelectorAll('#solveNote').forEach(n => n.remove());
+  if (!reduceMotion) { anim.gAmp.v = first ? 0 : Math.min(anim.gAmp.v, 0.5); }
+  anim.gAmp.t = 1;
+  update();
+  scheduleTick();
+}
+(function startSolver() {
   try {
     const src = document.getElementById('physics-core').textContent +
       ';self.onmessage=function(e){var sh=buildShapes(e.data.nn,e.data.nu,e.data);' +
-      'var p=(' + packShapes.toString() + ')(sh);' +
-      'postMessage(p,[p.whatT.buffer,p.slopesT.buffer,p.whatR.buffer,p.slopesR.buffer,' +
-      'p.uhat.buffer,p.wstate.buffer,p.thetaW.buffer]);};';
-    const w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
-    w.onmessage = e => onShapes(e.data);
-    w.onerror = () => runSync();
-    w.postMessage(CFG);
-    setTimeout(() => { if (!shapes) runSync(); }, 6000);   // watchdog (file:// quirks)
-  } catch (_) { runSync(); }
+      'var p=(' + packShapes.toString() + ')(sh);p.phiKey=e.data.phiKey;' +
+      'postMessage(p,[p.whatT.buffer,p.slopesT.buffer,p.whatS.buffer,p.whatR.buffer,' +
+      'p.slopesR.buffer,p.uhat.buffer,p.wstate.buffer,p.thetaW.buffer]);};';
+    solver.worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    solver.worker.onmessage = e => onSolved(e.data);
+    /* worker dead or silent: fall back to solving on the main thread,
+     * re-queuing the angle we were waiting for */
+    const failover = () => {
+      solver.worker = null; solver.busy = false;
+      if (solver.queued === null) solver.queued = phiKey();
+      pumpSolver();
+    };
+    solver.worker.onerror = failover;
+    setTimeout(() => { if (!shapes && solver.busy) failover(); }, 6000);
+  } catch (_) { solver.worker = null; }
+  requestShapes();
 })();
 
 /* ------------------------------ animation ------------------------------- */
@@ -891,6 +1005,14 @@ function update() {
       ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
     els.reqFlag.hidden = Freq <= 1000;
   }
+
+  /* slew readout */
+  if (shapes && !d.slack) {
+    const alpha = SLEW_ACC * Math.pow(state.slew * Math.PI / 180, 2) * 180 / Math.PI;
+    els.slewOut.textContent = 'peak α ' + fmtSmart(alpha) + ' °/s² · billow ' +
+      fmtSmart(slewSlopeMrad(d, state.slew)) + ' mrad · with sunlight ' +
+      fmtSmart(spaceTotalMrad(d, state.slew)) + ' mrad';
+  } else els.slewOut.textContent = d.slack ? 'membrane slack' : '…';
 
   /* aria summaries */
   els.g.cv.setAttribute('aria-label', 'Ground membrane: RMS slope ' +
@@ -972,14 +1094,23 @@ function drawMembrane(cv, d, gEnv, amp) {
   const slSc = sScaleEnv * 1e3;                          // mrad per unit slope coeff
   const slMax = 2 * state.tgt;
 
-  /* node screen positions */
+  /* node screen positions. In-plane displacement u = û·F(1−ν²)/(E·t) is
+   * true scale. With catenary cords the edges are cut as arcs — the physics
+   * runs on the square domain (few-% sagitta), but the outline is drawn
+   * scalloped: transfinite warp, sagitta L·tan(φ/2)/2, zero at the corners. */
+  const sagit = state.phiDeg > 0 ? Math.tan(state.phiDeg * Math.PI / 360) / 2 * L : 0;
   const px = new Float64Array(nn * nn), py = new Float64Array(nn * nn);
+  const wx = new Float64Array(nn * nn), wy = new Float64Array(nn * nn);
   for (let j = 0; j < nn; j++) for (let i = 0; i < nn; i++) {
     const n = j * nn + i;
-    /* physical in-plane displacement u = û·F(1−ν²)/(E·t) — L-independent:
-     * strain ∝ F/(E·t·L), displacement = strain·L */
-    const X = (i * hh - 0.5) * L + uhat[2 * n] * uSc;
-    const Y = (j * hh - 0.5) * L + uhat[2 * n + 1] * uSc;
+    const xi = i * hh, eta = j * hh;
+    let X = (i * hh - 0.5) * L + uhat[2 * n] * uSc;
+    let Y = (j * hh - 0.5) * L + uhat[2 * n + 1] * uSc;
+    if (sagit > 0) {
+      Y += 4 * xi * (1 - xi) * sagit * (1 - 2 * eta);
+      X += 4 * eta * (1 - eta) * sagit * (1 - 2 * xi);
+    }
+    wx[n] = X; wy[n] = Y;
     const p = proj(X, Y, what[n] * wSc);
     px[n] = p[0]; py[n] = p[1];
   }
@@ -1038,8 +1169,9 @@ function drawMembrane(cv, d, gEnv, amp) {
     ctx.stroke();
   }
 
-  /* membrane edge outline (shows the in-plane scallop) */
-  ctx.strokeStyle = 'rgba(11,11,11,.4)'; ctx.lineWidth = 1;
+  /* membrane edge outline — at φ>0 this is the catenary cord itself */
+  ctx.strokeStyle = sagit > 0 ? 'rgba(11,11,11,.55)' : 'rgba(11,11,11,.4)';
+  ctx.lineWidth = sagit > 0 ? 1.4 : 1;
   ctx.beginPath();
   const edge = [];
   for (let i = 0; i < nn; i++) edge.push(i);                       // bottom
@@ -1059,10 +1191,9 @@ function drawMembrane(cv, d, gEnv, amp) {
     ctx.strokeStyle = 'rgba(11,11,11,.30)';
     const mid = (nn - 1) / 2;
     const midNodes = [mid, mid * nn, mid * nn + nn - 1, (nn - 1) * nn + mid];
-    const midFrame = [proj(0, -L / 2, 0), proj(-L / 2, 0, 0), proj(L / 2, 0, 0), proj(0, L / 2, 0)];
-    for (let k = 0; k < 4; k++) {
-      const n = midNodes[k];
-      ctx.beginPath(); ctx.moveTo(midFrame[k][0], midFrame[k][1]);
+    for (const n of midNodes) {                        // vertical drop, z = 0 → film
+      const p0 = proj(wx[n], wy[n], 0);
+      ctx.beginPath(); ctx.moveTo(p0[0], p0[1]);
       ctx.lineTo(px[n], py[n]); ctx.stroke();
     }
   }
@@ -1089,7 +1220,7 @@ function drawMembrane(cv, d, gEnv, amp) {
 }
 
 /* ------------------------- mid-span section chart ----------------------- */
-const hover = { sec: null, chart: null };
+const hover = { sec: null, chart: null, slew: null };
 function drawSection() {
   const { ctx, w, h } = fitCanvas(els.cvSec);
   ctx.clearRect(0, 0, w, h);
@@ -1181,7 +1312,8 @@ function drawChart() {
   const Fmin = 20, Fmax = 1000;
   const kIdeal = d.sigma * d.g * d.L * d.L / (2 * Math.sqrt(Math.PI)) * 1e3; // mrad·N
   const kTruth = shapes ? shapes.coeffs.ST * d.sigma * d.g * d.L * d.L * 1e3 : NaN;
-  const ymax = niceCeil(Math.min(40, Math.max(2.5 * state.tgt, kIdeal / Math.max(d.F, Fmin) * 1.3, 4)));
+  const ymax = niceCeil(Math.min(40, Math.max(2.5 * state.tgt, kIdeal / Math.max(d.F, Fmin) * 1.3,
+    shapes ? kTruth / Math.max(d.F, Fmin) * 1.15 : 0, 4)));
   const X = F => m.l + (F / Fmax) * pw;
   const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
 
@@ -1204,7 +1336,7 @@ function drawChart() {
   ctx.beginPath(); ctx.moveTo(m.l, Y(state.tgt)); ctx.lineTo(w - m.r, Y(state.tgt)); ctx.stroke();
   ctx.setLineDash([]);
   ctx.fillStyle = '#52514e'; ctx.textAlign = 'left';
-  ctx.fillText('target ' + fmt(state.tgt, 2) + ' — solar-disk floor', m.l + 4, Y(state.tgt) - 4);
+  ctx.fillText('target ' + fmt(state.tgt, 2), m.l + 4, Y(state.tgt) - 4);
 
   const gzero = d.g < 0.005;
 
@@ -1240,13 +1372,12 @@ function drawChart() {
     ctx.fillStyle = '#898781'; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
     if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', X(0.42 * Fmax), Y(kTruth / (0.42 * Fmax)) + 13); }
 
-    /* required-force tick on the axis */
+    /* required-force marker on the axis (the number lives in the shared line) */
     const Freq = analytic.Freq(d.sigma, d.g, d.L, state.tgt / 1e3);
     if (Freq <= Fmax) {
-      ctx.strokeStyle = '#52514e';
-      ctx.beginPath(); ctx.moveTo(X(Freq), m.t + ph); ctx.lineTo(X(Freq), m.t + ph - 6); ctx.stroke();
-      ctx.fillStyle = '#52514e'; ctx.textAlign = 'center';
-      ctx.fillText(fmt(Freq, 0) + ' N', X(Freq), m.t + ph - 9);
+      ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(X(Freq), m.t + ph); ctx.lineTo(X(Freq), m.t + ph - 7); ctx.stroke();
+      ctx.lineWidth = 1;
     }
 
     /* current operating point on both ground curves */
@@ -1283,12 +1414,98 @@ function niceCeil(v) {
   return 10 * e;
 }
 
+/* ------------------------- slew billow chart -----------------------------
+ * Repointing in orbit: an overhead tracking pass at line-of-sight rate omega
+ * peaks at angular acceleration alpha ≈ 0.65·omega². The tangential
+ * acceleration alpha·x loads the film antisymmetrically about the slew axis;
+ * its RMS slope adds to the (orthogonal) solar-pressure billow in quadrature. */
+function slewSlopeMrad(d, omegaDegS) {
+  if (!shapes) return NaN;
+  const alpha = SLEW_ACC * Math.pow(omegaDegS * Math.PI / 180, 2);  // rad/s²
+  return shapes.coeffs.SS * d.sigma * alpha * Math.pow(d.L, 3) / Math.max(d.F, 1) * 1e3;
+}
+function spaceTotalMrad(d, omegaDegS) {
+  const srp = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
+  return Math.hypot(srp, slewSlopeMrad(d, omegaDegS));
+}
+function drawSlew() {
+  const { ctx, w, h } = fitCanvas(els.cvSlew);
+  ctx.clearRect(0, 0, w, h);
+  const d = derived();
+  const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  const m = { l: 44, r: 18, t: 16, b: 30 };
+  const pw = w - m.l - m.r, ph = h - m.t - m.b;
+  if (pw < 40 || ph < 30 || !shapes || d.slack) return;
+
+  const OMAX = 5;
+  const srp = shapes.coeffs.ST * d.sScaleSun * 1e3;
+  const ymax = niceCeil(Math.max(spaceTotalMrad(d, OMAX) * 1.15, srp * 2, 1e-6));
+  const X = o => m.l + (o / OMAX) * pw;
+  const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
+
+  /* grid + ticks */
+  ctx.font = mono; ctx.fillStyle = '#898781'; ctx.strokeStyle = '#e1e0d9'; ctx.lineWidth = 1;
+  for (const f of [0, 0.5, 1]) {
+    const y = m.t + f * ph;
+    ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
+    ctx.textAlign = 'right'; ctx.fillText(fmtSmart((1 - f) * ymax), m.l - 5, y + 3.5);
+  }
+  for (const o of [0, 1, 2, 3, 4, 5]) {
+    ctx.textAlign = o === 0 ? 'left' : o === OMAX ? 'right' : 'center';
+    ctx.fillText(fmt(o, 0), X(o), h - 18);
+  }
+  ctx.textAlign = 'left'; ctx.fillText('slope · mrad', m.l - 34, m.t - 6);
+  ctx.textAlign = 'center'; ctx.fillText('slew rate · °/s', m.l + pw / 2, h - 5);
+
+  /* sunlight-only floor */
+  ctx.strokeStyle = '#898781'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(m.l, Y(srp)); ctx.lineTo(w - m.r, Y(srp)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#898781'; ctx.textAlign = 'left';
+  ctx.fillText('sunlight only', m.l + 4, Y(srp) - 4);
+
+  /* total curve */
+  ctx.strokeStyle = '#1baf7a'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let o = 0; o <= OMAX + 1e-9; o += OMAX / 120) {
+    const y = Y(spaceTotalMrad(d, o));
+    o === 0 ? ctx.moveTo(X(o), y) : ctx.lineTo(X(o), y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = '#1baf7a'; ctx.textAlign = 'right';
+  ctx.fillText('space total', w - m.r - 2, Y(spaceTotalMrad(d, OMAX)) - 6);
+
+  /* target line only when it is on scale */
+  if (state.tgt <= ymax) {
+    ctx.strokeStyle = '#52514e'; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(m.l, Y(state.tgt)); ctx.lineTo(w - m.r, Y(state.tgt)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#52514e'; ctx.textAlign = 'left';
+    ctx.fillText('target ' + fmt(state.tgt, 2), m.l + 4, Y(state.tgt) - 4);
+  }
+
+  /* current operating point */
+  ctx.fillStyle = '#1baf7a';
+  ctx.beginPath(); ctx.arc(X(state.slew), Y(spaceTotalMrad(d, state.slew)), 3.5, 0, 7); ctx.fill();
+
+  /* hover */
+  if (hover.slew != null) {
+    const o = Math.max(0, Math.min(OMAX, (hover.slew - m.l) / pw * OMAX));
+    ctx.strokeStyle = '#c3c2b7'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(X(o), m.t); ctx.lineTo(X(o), m.t + ph); ctx.stroke();
+    ctx.fillStyle = '#0b0b0b'; ctx.textAlign = X(o) > w / 2 ? 'right' : 'left';
+    ctx.fillText(fmt(o, 2) + ' °/s · ' + fmtSmart(spaceTotalMrad(d, o)) + ' mrad',
+      X(o) + (X(o) > w / 2 ? -6 : 6), m.t + 10);
+  }
+}
+
 function drawAll() {
   const d = derived();
   drawMembrane(els.g.cv, d, true, anim.gAmp.v);
   drawMembrane(els.s.cv, d, false, 1);
   drawSection();
   drawChart();
+  drawSlew();
 }
 
 /* ------------------------------ controls -------------------------------- */
@@ -1314,12 +1531,14 @@ function bindPair(rngId, numId, key) {
 }
 const setters = {
   F: bindPair('rngF', 'numF', 'F'),
+  phiDeg: bindPair('rngPhi', 'numPhi', 'phiDeg'),
   g: bindPair('rngG', 'numG', 'g'),
   L: bindPair('rngL', 'numL', 'L'),
   massG: bindPair('rngM', 'numM', 'massG'),
   tgt: bindPair(null, 'numTgt', 'tgt'),
   E_GPa: bindPair(null, 'numE', 'E_GPa'),
   rho: bindPair(null, 'numRho', 'rho'),
+  slew: bindPair('rngSlew', 'numSlew', 'slew'),
 };
 
 const G_PRESETS = [0, 1.62, 3.72, 9.81];
@@ -1334,6 +1553,7 @@ function onControl(key, live) {
         }
     presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
   }
+  if (key === 'phiDeg') requestShapes();               // may need a fresh solve
   anim.gAmp.t = 1;
   update();
   scheduleTick();
@@ -1344,38 +1564,30 @@ presetBtns.forEach(b => b.addEventListener('click', () => {
   setters.g(+b.dataset.g);
 }));
 $('btnReset').addEventListener('click', () => {
-  setters.F(DEFAULTS.F); setters.g(DEFAULTS.g); setters.L(DEFAULTS.L);
-  setters.massG(DEFAULTS.massG); setters.tgt(DEFAULTS.tgt);
-  setters.E_GPa(DEFAULTS.E_GPa); setters.rho(DEFAULTS.rho);
+  setters.F(DEFAULTS.F); setters.phiDeg(DEFAULTS.phiDeg); setters.g(DEFAULTS.g);
+  setters.L(DEFAULTS.L); setters.massG(DEFAULTS.massG); setters.tgt(DEFAULTS.tgt);
+  setters.E_GPa(DEFAULTS.E_GPa); setters.rho(DEFAULTS.rho); setters.slew(DEFAULTS.slew);
 });
 
 /* hover wiring */
-function wireHover(cv, key) {
-  cv.addEventListener('mousemove', e => {
-    hover[key] = e.offsetX; key === 'sec' ? drawSection() : drawChart();
-  });
-  cv.addEventListener('mouseleave', () => {
-    hover[key] = null; key === 'sec' ? drawSection() : drawChart();
-  });
+function wireHover(cv, key, redraw) {
+  cv.addEventListener('mousemove', e => { hover[key] = e.offsetX; redraw(); });
+  cv.addEventListener('mouseleave', () => { hover[key] = null; redraw(); });
 }
-wireHover(els.cvSec, 'sec');
-wireHover(els.cvChart, 'chart');
+wireHover(els.cvSec, 'sec', drawSection);
+wireHover(els.cvChart, 'chart', drawChart);
+wireHover(els.cvSlew, 'slew', drawSlew);
 
 /* resize */
 new ResizeObserver(() => drawAll()).observe(document.querySelector('main'));
 
 /* reflect (possibly query-overridden) state into the controls */
-for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngG', 'numG'], 'g'],
-  [['rngL', 'numL'], 'L'], [['rngM', 'numM'], 'massG'], [['numTgt'], 'tgt'],
-  [['numE'], 'E_GPa'], [['numRho'], 'rho']])
+for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngPhi', 'numPhi'], 'phiDeg'],
+  [['rngG', 'numG'], 'g'], [['rngL', 'numL'], 'L'], [['rngM', 'numM'], 'massG'],
+  [['numTgt'], 'tgt'], [['numE'], 'E_GPa'], [['numRho'], 'rho'],
+  [['rngSlew', 'numSlew'], 'slew']])
   for (const id of ids) $(id).value = state[key];
 presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
-
-/* "solving" hint until the FEM lands */
-const solvingNote = document.createElement('div');
-solvingNote.className = 'solving';
-solvingNote.textContent = 'solving corner-load tension field…';
-document.querySelector('.hero figure.panel .stats').after(solvingNote);
 
 update();
 })();

@@ -22,16 +22,44 @@ N ∇²w = −p        p = σ·g,   σ = mass / L²
 
 Two models run together and agree in the uniform-tension limit:
 
-- **Corner-load FEM ("truth")** — plane-stress solve of the in-plane stress
-  field from four outward diagonal corner forces, with a Miller–Hedgepeth
-  wrinkling model (a membrane cannot carry compression; wrinkled elements
-  collapse to uniaxial stiffness). The out-of-plane sag then solves
-  `div(N·grad w) = −p` with that non-uniform tension field, pinned only at the
-  corner tabs. Corners carry most of the load; free edges scallop and droop.
+- **FEM ("truth")** — plane-stress solve of the in-plane stress field, with a
+  Miller–Hedgepeth wrinkling model (a membrane cannot carry compression;
+  wrinkled elements collapse to uniaxial stiffness). The out-of-plane sag then
+  solves `div(N·grad w) = −p` with that non-uniform tension field, pinned only
+  at the corner tabs.
 - **Uniform-tension reference ("ideal")** — the closed-form drumhead
   idealization: `N = F/(√2·L)`, `w_center = pL²/4πN`,
   `σ_slope = p·R_m/2√2·N` with `R_m = L/√π`, and
   `F_required = σ·g·L²/(2√π·σ_target)`.
+
+### Catenary edge cords (half-angle control)
+
+At half-angle φ = 0 the boom force enters the film directly at the corner tabs
+(corners carry most of the load; free edges scallop and droop). At φ > 0 each
+edge is cut as a circular arc of half-angle φ with a cord along it:
+
+- corner balance (two cord ends at 45° ∓ φ off the boom diagonal):
+  `T_cord = F / (√2·(cos φ + sin φ))`
+- Young–Laplace turns cord tension into outward normal edge traction:
+  `q = T/R = 2·T·sin φ / L`, and the interior tension field becomes (nearly)
+  uniform at `N ≈ q` — the FEM reproduces this closed form exactly.
+- the cord also carries transverse load as a tensioned string along the edge.
+
+Consequences the sim shows honestly: at **φ = 45°** the cords reproduce the
+conventional `N = F/(√2·L)` exactly; at shallow angles most of the corner force
+circulates in the cord and only the `sin φ` fraction tensions the film — a 5°
+catenary is dramatically floppier than direct corner attach at the same pull
+(shallow catenaries "too flat to pull out wrinkles"). The physics runs on the
+square domain (the few-percent scallop sagitta `L·tan(φ/2)/2` is drawn, not
+meshed), and the boom force is assumed to route entirely through the cords.
+
+### Slew billow
+
+Repointing in orbit: an overhead tracking pass at line-of-sight rate ω peaks at
+angular acceleration α ≈ 0.65·ω². The tangential acceleration α·x loads the
+film antisymmetrically about the slew axis (`rhs = ξ − ½`, one extra solve of
+the same operator); its RMS slope adds to the orthogonal solar-pressure billow
+in quadrature. The bottom chart sweeps ω 0–5 °/s.
 
 Both are solved **once, dimensionless** at startup (in a worker); the stress
 field shape depends only on Poisson's ratio, so every control change afterwards
@@ -56,9 +84,17 @@ The hero panels draw sag at a fixed ×50 vertical exaggeration (smoothly
 compressed once the drawn amplitude would exceed ~24 % of the side), so the
 membrane flattens continuously as tension rises — no rescale jumps.
 
-### Out of scope in v1 (hooks noted in source)
+### Defaults
 
-Thermal wrinkling, boom buckling, catenary edge cords.
+L = 15 m, mass = 350 g, F = 250 N/corner, φ = 10°, target 2.3 mrad,
+E = 4.4 GPa (effective coated-stack modulus; bare CP1 is ~2.1), ρ = 1430 kg/m³.
+The classic sanity numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m, 3.9 mrad, 23 mm,
+970 N @ 1 mrad) belong to the ideal-uniform reference and are tested.
+
+### Out of scope (hooks noted in source)
+
+Thermal wrinkling, boom buckling, cord mass/elasticity, direct-attach + cord
+hybrid load paths.
 
 ## Tests
 
