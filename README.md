@@ -33,8 +33,13 @@ State is shareable via query string, e.g. `?g=1.62&F=120&phi=15&theme=dark`
 Mass and film thickness are independent inputs: **mass** is the total as-built
 assembly (film + tapes + cords) and alone sets the gravity load σ = m/L²;
 **thickness** enters only through E·t (in-plane stretch, the stiffening check,
-film stress) and never changes the sag shape. Density is therefore not a
-parameter at all.
+film stress) and never changes the sag shape.
+
+**Areal density** is a linked control, not extra state — σ = m/L² always.
+Editing mass or density rewrites the other; dragging side length holds density
+fixed and rescales mass, so ground slope follows the textbook σgL²/F ∝ L².
+(At a fixed *lump* of mass the L cancels exactly — slope = S·m·g/F — which is
+why side length used to look like it "did nothing" on the ground readouts.)
 
 ## Physics
 
@@ -123,7 +128,7 @@ With cords (φ > 0) the corner detail largely washes out; at φ = 0 it matters.
 
 ### Defaults
 
-L = 15 m, total mass = 350 g, film t = 2.6 µm, F = 250 N/corner, φ = 10°,
+L = 15 m, total mass = 1000 g (σ ≈ 4.44 g/m²), film t = 2.6 µm, F = 250 N/corner, φ = 10°,
 grab 3 %, target 2.3 mrad, E = 4.4 GPa (effective coated-stack modulus; bare
 CP1 is ~2.1). The classic sanity numbers (σ ≈ 1.56 g/m², N ≈ 11.8 N/m,
 3.9 mrad, 23 mm, 970 N @ 1 mrad) belong to the ideal-uniform reference at

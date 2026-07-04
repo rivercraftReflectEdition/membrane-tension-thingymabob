@@ -227,8 +227,15 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 
   <div class="ctl">
     <div class="ctlrow"><label for="rngM">Membrane mass</label>
-      <span class="ctlval"><input class="num" id="numM" type="number" min="1" max="3000" step="1" value="1000" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
+      <span class="ctlval"><input class="num" id="numM" type="number" min="0.1" max="20000" step="1" value="1000" aria-label="Total membrane assembly mass, grams"><span class="unit">g</span></span></div>
     <input id="rngM" type="range" min="1" max="3000" step="1" value="1000">
+  </div>
+
+  <div class="ctl">
+    <div class="ctlrow"><label for="rngSig">Areal density</label>
+      <span class="ctlval"><input class="num" id="numSig" type="number" min="0.5" max="50" step="0.01" value="4.44" aria-label="Areal density, grams per square meter"><span class="unit">g/m²</span></span></div>
+    <input id="rngSig" type="range" min="0.5" max="50" step="0.05" value="4.44">
+    <div class="ctlnote">linked to mass · side length holds density and rescales mass</div>
   </div>
 
   <div class="ctl">
@@ -841,15 +848,18 @@ const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
 const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only static load in space
 const SLEW_ACC = 0.65;                     // peak alpha ≈ 0.65·omega² for an overhead tracking pass
 /* massG = TOTAL as-built mass (film + tapes + cords) — it alone sets the
- * gravity load. tUm = film thickness, a direct input: it only enters through
- * E·t (in-plane stretch, stiffening, film stress), never the sag shape. */
-const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 1000, tgt: 2.3, E_GPa: 4.4, tUm: 2.6,
-                   phiDeg: 10, grabPct: 3, slew: 0.83 };
+ * gravity load. sigGm2 = the same thing per area (g/m²): the two controls are
+ * linked (sig = massG/L²), and dragging side length holds DENSITY fixed and
+ * rescales mass — so slope vs L behaves like a real build, not a fixed lump.
+ * tUm = film thickness, a direct input: it only enters through E·t (in-plane
+ * stretch, stiffening, film stress), never the sag shape. */
+const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 1000, sigGm2: 1000 / 225, tgt: 2.3,
+                   E_GPa: 4.4, tUm: 2.6, phiDeg: 10, grabPct: 3, slew: 0.83 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
 const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', t: 'tUm',
                phi: 'phiDeg', grab: 'grabPct', slew: 'slew' };
-const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [1, 3000], tgt: [0.1, 20],
+const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [0.1, 20000], tgt: [0.1, 20],
                E_GPa: [0.1, 500], tUm: [0.5, 100], phiDeg: [0, 45], grabPct: [1, 10],
                slew: [0, 5] };
 {
@@ -858,6 +868,7 @@ const QLIM = { F: [0, 1000], g: [0, 9.81], L: [0.5, 20], massG: [1, 3000], tgt: 
     const v = parseFloat(qs.get(q));
     if (isFinite(v)) state[key] = Math.min(QLIM[key][1], Math.max(QLIM[key][0], v));
   }
+  state.sigGm2 = state.massG / (state.L * state.L);   // density follows m and L from the URL
 }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -1770,6 +1781,14 @@ function bindPair(rngId, numId, key) {
   });
   return set;
 }
+/* mass ↔ density linkage: sig = massG/L² always. Editing either rewrites the
+ * other; editing L holds density and rescales mass. */
+function reflectDensity() {
+  $('rngM').value = state.massG;
+  $('numM').value = Math.round(state.massG * 10) / 10;
+  $('rngSig').value = state.sigGm2;
+  $('numSig').value = Math.round(state.sigGm2 * 100) / 100;
+}
 const setters = {
   F: bindPair('rngF', 'numF', 'F'),
   phiDeg: bindPair('rngPhi', 'numPhi', 'phiDeg'),
@@ -1777,6 +1796,7 @@ const setters = {
   g: bindPair('rngG', 'numG', 'g'),
   L: bindPair('rngL', 'numL', 'L'),
   massG: bindPair('rngM', 'numM', 'massG'),
+  sigGm2: bindPair('rngSig', 'numSig', 'sigGm2'),
   tgt: bindPair(null, 'numTgt', 'tgt'),
   E_GPa: bindPair(null, 'numE', 'E_GPa'),
   tUm: bindPair(null, 'numT', 'tUm'),
@@ -1795,6 +1815,13 @@ function onControl(key, noSnap) {
           state.g = p; $('rngG').value = p; $('numG').value = p; break;
         }
     presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
+  }
+  if (key === 'massG' || key === 'sigGm2' || key === 'L') {
+    const A = state.L * state.L;
+    if (key === 'massG') state.sigGm2 = state.massG / A;
+    else state.massG = Math.min(20000, Math.max(0.1, state.sigGm2 * A));
+    state.sigGm2 = state.massG / A;                       // re-derive after any clamp
+    reflectDensity();
   }
   if (key === 'phiDeg' || key === 'grabPct') requestShapes();   // may need a fresh solve
   anim.gAmp.t = 1;
@@ -1859,6 +1886,7 @@ for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngPhi', 'numPhi'], 'phiDe
   [['rngM', 'numM'], 'massG'], [['numTgt'], 'tgt'], [['numE'], 'E_GPa'], [['numT'], 'tUm'],
   [['rngSlew', 'numSlew'], 'slew']])
   for (const id of ids) $(id).value = state[key];
+reflectDensity();
 presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
 
 /* theme: light by default (the pre-paint <head> script honors ?theme=dark) */
