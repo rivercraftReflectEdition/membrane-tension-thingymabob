@@ -48,10 +48,17 @@ sits somewhat flatter than the ideal-uniform reference, and pays for it with
 scalloped, drooping free edges. Both numbers are shown; the reference keeps the
 conventional formulas above.
 
+In space the only transverse load is solar radiation pressure (9.1 µPa) — the
+same solve scaled to it, so the space panel shows real (tiny) numbers and a
+real required corner force instead of a bare zero.
+
+The hero panels draw sag at a fixed ×50 vertical exaggeration (smoothly
+compressed once the drawn amplitude would exceed ~24 % of the side), so the
+membrane flattens continuously as tension rises — no rescale jumps.
+
 ### Out of scope in v1 (hooks noted in source)
 
-Solar radiation pressure (~9 µPa, shown only as a load-ratio context number),
-thermal wrinkling, boom buckling, catenary edge cords.
+Thermal wrinkling, boom buckling, catenary edge cords.
 
 ## Tests
 

@@ -129,8 +129,8 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
 #cvChart{aspect-ratio:16/8}
 
 /* footnotes */
-.notes{margin-top:18px;font-size:11px;color:var(--muted);line-height:1.6}
-.notes b{color:var(--ink2);font-weight:600}
+.notes{margin-top:18px;font-size:12.5px;color:var(--ink2);line-height:1.7;max-width:72em}
+.notes b{color:var(--ink);font-weight:600}
 
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -148,7 +148,6 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
     <div class="chip"><span class="lbl">film thickness</span><span class="val" id="chipT">—</span></div>
     <div class="chip"><span class="lbl">areal density</span><span class="val" id="chipSig">—</span></div>
     <div class="chip"><span class="lbl">film stress</span><span class="val" id="chipStress">—</span></div>
-    <div class="chip"><span class="lbl">film strain</span><span class="val" id="chipStrain">—</span></div>
   </div>
 </header>
 
@@ -229,13 +228,13 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
     <figure class="panel">
       <figcaption>
         <span class="envname">In space</span>
-        <span class="envg mono">0 g</span>
+        <span class="envg mono">0 g · sunlight</span>
       </figcaption>
       <canvas id="cvS" role="img" aria-label="Space membrane surface"></canvas>
       <div class="stats">
         <div class="stat"><span class="lbl">rms slope</span>
           <span class="val" id="stSslope">—</span>
-          <span class="ideal">flat — no transverse load</span></div>
+          <span class="ideal">sunlight only · 9.1 µPa</span></div>
         <div class="stat"><span class="lbl">p–v sag</span>
           <span class="val" id="stSsag">—</span>
           <span class="ideal">&nbsp;</span></div>
@@ -273,9 +272,9 @@ figure.chart figcaption{font-size:12px;letter-spacing:.10em;text-transform:upper
   </section>
 
   <footer class="notes">
-    <div><b>Model.</b> Linear membrane (tension only, no bending): N∇²w = −σg. Truth = plane-stress FEM with corner loads and Miller–Hedgepeth wrinkling, sag pinned at the corner tabs. Reference = uniform-tension drumhead with N = F⁄(√2·L), w꜀ = pL²⁄4πN, σ_slope = pR_m⁄2√2N, R_m = L⁄√π.</div>
-    <div><b>Why they differ.</b> No uniform tension field can exactly balance four corner point loads; the FEM interior carries ≈1.55× the nominal N (wrinkled edges shed load inward), so the real film sits somewhat flatter than the ideal-uniform reference at the same pull — its free edges scallop instead.</div>
-    <div><b>Scope.</b> v1 is the gravity billow only — solar pressure (~9 µPa), thermal wrinkling and boom buckling are out of scope (hooks in source). Small-slope regime; readouts flag when it breaks.</div>
+    <div><b>Model.</b> Tension-only membrane, N∇²w = −p — ground p = σg, space p = 9.1 µPa of sunlight. FEM = corner-loaded film with wrinkling, held at the corner tabs. Ideal = uniform-tension drumhead, N = F⁄(√2·L).</div>
+    <div><b>Why FEM reads flatter.</b> No uniform tension can balance four corner pulls — the interior actually carries ≈1.55× N while the free edges scallop and droop.</div>
+    <div><b>Not modeled.</b> Thermal wrinkling · boom buckling · edge catenary cords.</div>
   </footer>
 </main>
 </div>
@@ -726,7 +725,7 @@ if (typeof module !== 'undefined') {
  * ========================================================================= */
 (function () {
 const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
-const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure hook (v1: context only)
+const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure — the only load in space
 const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 2.1, rho: 1430 };
 const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
@@ -739,7 +738,7 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const $ = id => document.getElementById(id);
 const els = {
-  chips: { t: $('chipT'), sig: $('chipSig'), stress: $('chipStress'), strain: $('chipStrain') },
+  chips: { t: $('chipT'), sig: $('chipSig'), stress: $('chipStress') },
   g: {
     slope: $('stGslope'), slopeI: $('stGslopeI'), sag: $('stGsag'), sagI: $('stGsagI'),
     ten: $('stGten'), note: $('stGnote'), cv: $('cvG'), lbl: $('lblG'),
@@ -755,6 +754,10 @@ function fmtAuto(v, d2 = 10, d1 = 100) {   // 2 dp, then 1, then 0 as magnitude 
   if (!isFinite(v)) return '—';
   return fmt(v, v < d2 ? 2 : v < d1 ? 1 : 0);
 }
+function fmtSmart(v) {                     // like fmtAuto, but tiny values keep 2 sig figs
+  if (!isFinite(v)) return '—';
+  return v !== 0 && Math.abs(v) < 0.01 ? Number(v.toPrecision(2)).toString() : fmtAuto(v);
+}
 const unit = (s) => ` <small>${s}</small>`;
 
 /* ------------------------------ physics glue ---------------------------- */
@@ -768,8 +771,10 @@ function derived() {
   const p = analytic.pressure(sigma, g);
   return {
     L, mass, F, g, E, rho, sigma, t, N, p,
-    sScale: sigma * g * L * L / Feff,                  // rad per unit slope coeff
-    wScale: sigma * g * L * L * L / Feff,              // m per unit ŵ
+    sScale: sigma * g * L * L / Feff,                  // rad per unit slope coeff (gravity)
+    wScale: sigma * g * L * L * L / Feff,              // m per unit ŵ (gravity)
+    sScaleSun: P_SUN * L * L / Feff,                   // same, solar pressure only (space)
+    wScaleSun: P_SUN * L * L * L / Feff,
     slack: F < 2,
   };
 }
@@ -840,7 +845,6 @@ function update() {
   els.chips.t.textContent = fmt(d.t * 1e6, 2) + ' µm';
   els.chips.sig.textContent = fmt(d.sigma * 1e3, 2) + ' g/m²';
   els.chips.stress.textContent = d.t > 0 ? fmtAuto(d.N / d.t / 1e6) + ' MPa' : '—';
-  els.chips.strain.textContent = fmt(d.N / (d.E * d.t) * 100, 2) + ' %';
 
   /* per-environment readouts (ground = current g, space = 0) */
   els.g.lbl.textContent = 'g = ' + fmt(d.g, 2) + ' m/s²';
@@ -862,22 +866,29 @@ function update() {
   els.g.ten.innerHTML = fmtAuto(d.N) + unit('N/m');
   els.g.note.textContent = regime && !d.slack ? '† beyond small-slope regime' : ' ';
 
-  els.s.slope.innerHTML = '0.00' + unit('mrad');
-  els.s.sag.innerHTML = '0.0' + unit('mm');
+  /* space: solar radiation pressure is the only transverse load */
+  const spSlope = shapes ? shapes.coeffs.ST * d.sScaleSun * 1e3 : NaN;
+  const spSag = shapes ? shapes.coeffs.PVT * d.wScaleSun * 1e3 : NaN;
+  if (d.slack) {
+    els.s.slope.innerHTML = 'slack'; els.s.sag.innerHTML = '—';
+  } else {
+    els.s.slope.innerHTML = (shapes ? fmtSmart(spSlope) : '…') + unit('mrad');
+    els.s.sag.innerHTML = (shapes ? fmtSmart(spSag) : '…') + unit('mm');
+  }
   els.s.ten.innerHTML = fmtAuto(d.N) + unit('N/m');
 
-  /* shared required-force line */
+  /* shared required-force line: same target, both loads */
   const tgt = state.tgt / 1e3;
+  const FreqS = P_SUN * d.L * d.L / (2 * Math.sqrt(Math.PI) * tgt);   // sunlight only
   if (d.g < 0.005) {
-    els.reqLine.textContent = 'No transverse load at 0 g — any tension holds ' +
-      fmt(state.tgt, 2) + ' mrad. Corner force is for stiffness, not for fighting gravity.';
+    els.reqLine.textContent = '0 g — gravity gone: sunlight alone needs just ' +
+      fmtSmart(FreqS) + ' N/corner for ' + fmt(state.tgt, 2) + ' mrad.';
     els.reqFlag.hidden = true;
   } else {
     const Freq = analytic.Freq(d.sigma, d.g, d.L, tgt);
-    const ratio = d.sigma * d.g / P_SUN;                 // gravity load vs sunlight load
     els.reqLine.textContent = 'To reach ' + fmt(state.tgt, 2) + ' mrad — ground ' +
-      fmt(Freq, 0) + ' N/corner · space ~0 N · gravity load = ' +
-      fmt(ratio, 0) + '× sunlight';
+      fmt(Freq, 0) + ' N/corner · space ' + fmtSmart(FreqS) +
+      ' N (sunlight) · ×' + fmt(Freq / FreqS, 0);
     els.reqFlag.hidden = Freq <= 1000;
   }
 
@@ -885,7 +896,8 @@ function update() {
   els.g.cv.setAttribute('aria-label', 'Ground membrane: RMS slope ' +
     (shapes ? fmtAuto(truthSlope) : '—') + ' milliradians, sag ' +
     (shapes ? fmtAuto(truthSag) : '—') + ' millimeters');
-  els.s.cv.setAttribute('aria-label', 'Space membrane: flat, RMS slope about zero');
+  els.s.cv.setAttribute('aria-label', 'Space membrane: essentially flat, RMS slope ' +
+    (shapes ? fmtSmart(spSlope) : '—') + ' milliradians under sunlight alone');
 
   drawAll();
 }
@@ -913,33 +925,24 @@ function rampColor(x) {                                  // x in [0,1]
 
 /* isometric projection constants — low-ish camera so the bow reads */
 const KX = 0.866, KY = 0.34, KZ = 1.0, SAGFRAC = 0.24;
-function round125(v) {                                   // nearest 1-2-5 value, for the exaggeration label
-  if (!isFinite(v) || v <= 0) return 1;
-  const e = Math.pow(10, Math.floor(Math.log10(v)));
-  let best = e, dist = Infinity;
-  for (const m of [1, 2, 5, 10]) {
-    const dd = Math.abs(Math.log(m * e / v));
-    if (dd < dist) { dist = dd; best = m * e; }
-  }
-  return best;
-}
-/* one shared vertical exaggeration, from the ground sag, stable in 1-2-5 steps */
-function currentExZ(d) {
-  if (!shapes || d.g < 1e-4 || d.slack) return currentExZ.last || 100;
-  const pv = shapes.coeffs.PVT * d.wScale;
-  const ex = round125(SAGFRAC * d.L / Math.max(pv, 1e-9));
-  currentExZ.last = Math.min(ex, 100000);
-  return currentExZ.last;
+/* ONE fixed vertical exaggeration: the drawn sag varies continuously with the
+ * controls (a taut mirror looks flat, a slack one droops), no rescale jumps.
+ * Beyond ~SAGFRAC·L the drawn amplitude compresses smoothly (tanh), shape
+ * preserved, so extreme slack states stay inside the panel. */
+const EXZ = 50;
+function sagCompression(Apeak, L) {                      // global multiplier <= 1
+  const cap = SAGFRAC * L;
+  if (!(Apeak > 0) || Apeak <= cap) return 1;
+  return cap * Math.tanh(Apeak / cap) / Apeak;
 }
 
 function drawMembrane(cv, d, gEnv, amp) {
   const { ctx, w, h } = fitCanvas(cv);
   ctx.clearRect(0, 0, w, h);
   const L = d.L;
-  const exZ = currentExZ(d);
   /* fixed world box: width 2L·KX, height 2L·KY + allowance for sag */
   const pad = 10;
-  const sagAllow = SAGFRAC * L * KZ * 1.5;   // nearest-1-2-5 rounding can overshoot ×√2
+  const sagAllow = SAGFRAC * L * KZ * 1.1;
   const sc = Math.min((w - 2 * pad) / (2 * L * KX), (h - 2 * pad - 14) / (2 * L * KY + sagAllow));
   const cx = w / 2, cy = pad + L * KY * sc;
   const proj = (X, Y, z) => [cx + (X - Y) * KX * sc, cy + (X + Y) * KY * sc + z * KZ * sc];
@@ -961,8 +964,12 @@ function drawMembrane(cv, d, gEnv, amp) {
   const nn = shapes.mesh.nn, hh = shapes.mesh.h;
   const what = shapes.whatT, uhat = shapes.uhat;
   const uSc = d.t > 0 ? d.F * (1 - CFG.nu * CFG.nu) / (d.E * d.t) : 0;  // in-plane, TRUE scale
-  const wSc = (gEnv ? d.wScale * amp : 0) * exZ;         // meters of drawn sag per unit ŵ
-  const slSc = (gEnv ? d.sScale : 0) * 1e3;              // mrad per unit slope coeff
+  /* ground: gravity sag; space: solar-pressure sag (µm — reads flat, honestly) */
+  const wScaleEnv = gEnv ? d.wScale : d.wScaleSun;
+  const sScaleEnv = gEnv ? d.sScale : d.sScaleSun;
+  const compress = sagCompression(shapes.coeffs.PVT * wScaleEnv * amp * EXZ, L);
+  const wSc = wScaleEnv * amp * EXZ * compress;          // meters of drawn sag per unit ŵ
+  const slSc = sScaleEnv * 1e3;                          // mrad per unit slope coeff
   const slMax = 2 * state.tgt;
 
   /* node screen positions */
@@ -1076,10 +1083,9 @@ function drawMembrane(cv, d, gEnv, amp) {
   /* annotation */
   ctx.fillStyle = '#898781'; ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
   ctx.textAlign = 'right';
-  ctx.fillText(!gEnv ? 'same scale as ground panel' :
-    d.g < 1e-4 ? 'no gravity load — flat · in-plane true scale' :
-    'vertical sag ×' + fmt(exZ, 0) + ' · in-plane true scale',
-    w - 4, h - 4);
+  ctx.fillText((!gEnv ? 'sunlight only · ' : d.g < 1e-4 ? 'no gravity load · ' : '') +
+    'vertical sag ×' + fmt(EXZ, 0) + (compress < 0.98 ? ' (compressed)' : '') +
+    ' · in-plane true scale', w - 4, h - 4);
 }
 
 /* ------------------------- mid-span section chart ----------------------- */
@@ -1286,18 +1292,21 @@ function drawAll() {
 }
 
 /* ------------------------------ controls -------------------------------- */
-function bindPair(rngId, numId, key, toState, fromState) {
+function bindPair(rngId, numId, key) {
   const rng = $(rngId), num = $(numId);
-  const set = v => {
-    state[key] = toState ? toState(v) : v;
+  const set = (v, live) => {
+    state[key] = v;
     if (rng) rng.value = v;
     num.value = v;
-    onControl(key);
+    onControl(key, live);
   };
-  if (rng) rng.addEventListener('input', () => set(parseFloat(rng.value)));
+  if (rng) {
+    rng.addEventListener('input', () => set(parseFloat(rng.value), true));  // no snap mid-drag
+    rng.addEventListener('change', () => set(parseFloat(rng.value)));       // snap on release
+  }
   num.addEventListener('change', () => {
     let v = parseFloat(num.value);
-    if (!isFinite(v)) v = fromState ? fromState(DEFAULTS[key]) : DEFAULTS[key];
+    if (!isFinite(v)) v = DEFAULTS[key];
     v = Math.min(parseFloat(num.max), Math.max(parseFloat(num.min), v));
     set(v);
   });
@@ -1315,13 +1324,14 @@ const setters = {
 
 const G_PRESETS = [0, 1.62, 3.72, 9.81];
 const presetBtns = [...document.querySelectorAll('.presets button')];
-function onControl(key) {
+function onControl(key, live) {
   if (key === 'g') {
-    /* snap the star control to nearby presets */
-    for (const p of G_PRESETS)
-      if (Math.abs(state.g - p) < 0.22 && state.g !== p) {
-        state.g = p; $('rngG').value = p; $('numG').value = p; break;
-      }
+    /* snap the star control to nearby presets — only on release, not mid-drag */
+    if (!live)
+      for (const p of G_PRESETS)
+        if (Math.abs(state.g - p) < 0.22 && state.g !== p) {
+          state.g = p; $('rngG').value = p; $('numG').value = p; break;
+        }
     presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
   }
   anim.gAmp.t = 1;
