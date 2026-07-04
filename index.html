@@ -775,7 +775,9 @@ function onShapes(d) {
   shapes = d;
   document.querySelectorAll('.solving').forEach(n => n.remove());
   anim.gAmp.v = reduceMotion ? 1 : 0;                  // grow the sag in from flat
+  anim.gAmp.t = 1;
   update();
+  scheduleTick();
 }
 function runSync() {
   setTimeout(() => {
@@ -901,13 +903,17 @@ function rampColor(x) {                                  // x in [0,1]
     Math.round(a[1] + (b[1] - a[1]) * f) + ',' + Math.round(a[2] + (b[2] - a[2]) * f) + ')';
 }
 
-/* isometric projection constants */
-const KX = 0.866, KY = 0.40, KZ = 0.88, SAGFRAC = 0.16;
-function round125(v) {                                   // 1-2-5 series, for the exaggeration label
+/* isometric projection constants — low-ish camera so the bow reads */
+const KX = 0.866, KY = 0.34, KZ = 1.0, SAGFRAC = 0.24;
+function round125(v) {                                   // nearest 1-2-5 value, for the exaggeration label
   if (!isFinite(v) || v <= 0) return 1;
   const e = Math.pow(10, Math.floor(Math.log10(v)));
-  const m = v / e;
-  return (m >= 5 ? 5 : m >= 2 ? 2 : 1) * e;
+  let best = e, dist = Infinity;
+  for (const m of [1, 2, 5, 10]) {
+    const dd = Math.abs(Math.log(m * e / v));
+    if (dd < dist) { dist = dd; best = m * e; }
+  }
+  return best;
 }
 /* one shared vertical exaggeration, from the ground sag, stable in 1-2-5 steps */
 function currentExZ(d) {
@@ -925,7 +931,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   const exZ = currentExZ(d);
   /* fixed world box: width 2L·KX, height 2L·KY + allowance for sag */
   const pad = 10;
-  const sagAllow = SAGFRAC * L * KZ * 1.15;
+  const sagAllow = SAGFRAC * L * KZ * 1.5;   // nearest-1-2-5 rounding can overshoot ×√2
   const sc = Math.min((w - 2 * pad) / (2 * L * KX), (h - 2 * pad - 14) / (2 * L * KY + sagAllow));
   const cx = w / 2, cy = pad + L * KY * sc;
   const proj = (X, Y, z) => [cx + (X - Y) * KX * sc, cy + (X + Y) * KY * sc + z * KZ * sc];
@@ -1021,6 +1027,24 @@ function drawMembrane(cv, d, gEnv, amp) {
   edge.forEach((n, k) => k ? ctx.lineTo(px[n], py[n]) : ctx.moveTo(px[n], py[n]));
   ctx.closePath(); ctx.stroke();
 
+  /* corner-plane frame again in front, plus droop ticks at the mid-edges —
+   * the gap between frame and film is what gravity costs */
+  ctx.strokeStyle = 'rgba(11,11,11,.38)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); fr.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
+  ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]);
+  if (gEnv && wSc > 0) {
+    ctx.strokeStyle = 'rgba(11,11,11,.30)';
+    const mid = (nn - 1) / 2;
+    const midNodes = [mid, mid * nn, mid * nn + nn - 1, (nn - 1) * nn + mid];
+    const midFrame = [proj(0, -L / 2, 0), proj(-L / 2, 0, 0), proj(L / 2, 0, 0), proj(0, L / 2, 0)];
+    for (let k = 0; k < 4; k++) {
+      const n = midNodes[k];
+      ctx.beginPath(); ctx.moveTo(midFrame[k][0], midFrame[k][1]);
+      ctx.lineTo(px[n], py[n]); ctx.stroke();
+    }
+  }
+
   /* corner tabs + boom pull stubs */
   ctx.fillStyle = '#0b0b0b'; ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1;
   const corners = [[0, 0, -1, -1], [nn - 1, 0, 1, -1], [0, nn - 1, -1, 1], [nn - 1, nn - 1, 1, 1]];
@@ -1048,7 +1072,7 @@ function drawSection() {
   ctx.clearRect(0, 0, w, h);
   const d = derived();
   const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
-  const m = { l: 40, r: 8, t: 10, b: 24 };
+  const m = { l: 34, r: 20, t: 16, b: 22 };
   const pw = w - m.l - m.r, ph = h - m.t - m.b;
   if (pw < 40 || ph < 30) return;
 
@@ -1067,18 +1091,20 @@ function drawSection() {
   const X = i => m.l + (i / (CFG.nn - 1)) * pw;
   const Y = v => m.t + (v / ymax) * ph;
 
-  /* frame + gridlines + ticks */
+  /* frame + gridlines + ticks (sag in mm, downward) */
   ctx.strokeStyle = '#e1e0d9'; ctx.lineWidth = 1;
   ctx.font = mono; ctx.fillStyle = '#898781';
   for (const f of [0, 0.5, 1]) {
     const y = m.t + f * ph;
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
     ctx.textAlign = 'right';
-    ctx.fillText(fmtAuto(f * ymax) + ' mm', m.l - 5, y + 3.5);
+    ctx.fillText(fmtAuto(f * ymax), m.l - 5, y + 3.5);
   }
-  ctx.textAlign = 'center';
-  for (const f of [0, 0.5, 1])
-    ctx.fillText(fmt(f * d.L, 1) + ' m', m.l + f * pw, h - 8);
+  ctx.textAlign = 'left'; ctx.fillText('sag · mm', m.l - 30, m.t - 6);
+  for (const f of [0, 0.5, 1]) {
+    ctx.textAlign = f === 0 ? 'left' : f === 1 ? 'right' : 'center';
+    ctx.fillText(fmt(f * d.L, 1) + ' m', m.l + f * pw, h - 6);
+  }
 
   if (!truth) { return; }
 
@@ -1095,10 +1121,14 @@ function drawSection() {
   ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2;
   ctx.beginPath(); truth.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))); ctx.stroke();
 
-  /* direct labels at the right margin (identity never color-alone) */
-  ctx.textAlign = 'right'; ctx.font = mono;
-  ctx.fillStyle = '#1baf7a'; ctx.fillText('space', w - m.r - 2, Y(0) - 4);
-  ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', w - m.r - 2, Y(truth[CFG.nn - 2]) + 12);
+  /* direct labels (identity never color-alone) */
+  ctx.font = mono;
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#1baf7a'; ctx.fillText('space', w - m.r, Y(0) - 4);
+  ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', w - m.r, Y(truth[CFG.nn - 2]) + 12);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#898781';
+  ctx.fillText('ideal', X((CFG.nn - 1) / 2), Y(ideal[(CFG.nn - 1) / 2]) + 12);
 
   /* hover readout */
   if (hover.sec) {
@@ -1121,7 +1151,7 @@ function drawChart() {
   ctx.clearRect(0, 0, w, h);
   const d = derived();
   const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
-  const m = { l: 40, r: 10, t: 10, b: 24 };
+  const m = { l: 34, r: 18, t: 16, b: 30 };
   const pw = w - m.l - m.r, ph = h - m.t - m.b;
   if (pw < 40 || ph < 30) return;
 
@@ -1139,11 +1169,12 @@ function drawChart() {
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
     ctx.textAlign = 'right'; ctx.fillText(fmtAuto((1 - f) * ymax), m.l - 5, y + 3.5);
   }
-  ctx.textAlign = 'center';
-  for (const F of [0, 250, 500, 750, 1000]) ctx.fillText(fmt(F, 0), X(F), h - 8);
-  ctx.save(); ctx.translate(10, m.t + ph / 2); ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'center'; ctx.fillText('mrad', 0, 0); ctx.restore();
-  ctx.textAlign = 'right'; ctx.fillText('N/corner', w - m.r, h - 8 - 11);
+  for (const F of [0, 250, 500, 750, 1000]) {
+    ctx.textAlign = F === 0 ? 'left' : F === 1000 ? 'right' : 'center';
+    ctx.fillText(fmt(F, 0), X(F), h - 18);
+  }
+  ctx.textAlign = 'left'; ctx.fillText('slope · mrad', m.l - 30, m.t - 6);
+  ctx.textAlign = 'center'; ctx.fillText('corner force · N', m.l + pw / 2, h - 5);
 
   /* target hairline */
   ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
@@ -1160,20 +1191,29 @@ function drawChart() {
   ctx.fillStyle = '#1baf7a'; ctx.textAlign = 'right'; ctx.fillText('space', w - m.r - 2, Y(0) - 4);
 
   if (!gzero) {
-    /* ideal (dashed muted) & truth (accent) hyperbolas */
-    ctx.strokeStyle = '#898781'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
-    ctx.beginPath();
-    for (let F = Fmin; F <= Fmax; F += 5) { const y = Y(kIdeal / F); F === Fmin ? ctx.moveTo(X(F), y) : ctx.lineTo(X(F), y); }
-    ctx.stroke(); ctx.setLineDash([]);
-    if (shapes) {
-      ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2;
+    /* ideal (dashed muted) & truth (accent) hyperbolas — clip above ymax
+     * (enter the plot where the curve crosses the top, don't smear along it) */
+    const hyperbola = k => {
       ctx.beginPath();
-      for (let F = Fmin; F <= Fmax; F += 5) { const y = Y(kTruth / F); F === Fmin ? ctx.moveTo(X(F), y) : ctx.lineTo(X(F), y); }
+      let started = false;
+      const Fenter = Math.max(Fmin, k / ymax);           // slope(F) <= ymax from here on
+      for (let F = Fenter; F <= Fmax; F += 5) {
+        const yv = Y(k / F);
+        started ? ctx.lineTo(X(F), yv) : ctx.moveTo(X(F), yv);
+        started = true;
+      }
       ctx.stroke();
-    }
-    ctx.fillStyle = '#898781'; ctx.textAlign = 'right';
-    ctx.fillText('ideal', w - m.r - 2, Y(kIdeal / Fmax) - 5);
-    if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', w - m.r - 2, Y(kTruth / Fmax) + 11); }
+    };
+    ctx.strokeStyle = '#898781'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    hyperbola(kIdeal);
+    ctx.setLineDash([]);
+    if (shapes) { ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2; hyperbola(kTruth); }
+
+    /* direct labels sit above their own curve mid-plot, clear of the corner */
+    const Flab = 0.42 * Fmax;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#898781'; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
+    if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', X(Flab), Y(kTruth / Flab) + 13); }
 
     /* required-force tick on the axis */
     const Freq = analytic.Freq(d.sigma, d.g, d.L, state.tgt / 1e3);
