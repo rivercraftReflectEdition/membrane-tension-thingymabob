@@ -14,11 +14,50 @@ const state = { ...DEFAULTS };
 /* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
 const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho',
                phi: 'phiDeg', slew: 'slew' };
-for (const [q, key] of Object.entries(QMAP)) {
-  const v = parseFloat(new URLSearchParams(location.search).get(q));
-  if (isFinite(v)) state[key] = v;
+const QLIM = { F: [0, 1000], g: [0, 9.81], L: [2, 20], massG: [100, 1000], tgt: [0.1, 20],
+               E_GPa: [0.1, 500], rho: [500, 5000], phiDeg: [0, 45], slew: [0, 5] };
+{
+  const qs = new URLSearchParams(location.search);
+  for (const [q, key] of Object.entries(QMAP)) {
+    const v = parseFloat(qs.get(q));
+    if (isFinite(v)) state[key] = Math.min(QLIM[key][1], Math.max(QLIM[key][0], v));
+  }
 }
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ------------------------------- theme -----------------------------------
+ * Orange / white / black. Both palettes follow the same roles; canvases read
+ * the active one at draw time. No storage — default follows the OS, the
+ * header button flips it for the session. */
+const THEMES = {
+  light: {
+    ink: '#0b0b0b', ink2: '#52514e', muted: '#898781', grid: '#e1e0d9',
+    axis: '#c3c2b7', surface: '#fcfcfb', accent: '#e05500', space: '#0b0b0b',
+    inkRGB: '11,11,11',
+    ramp: ['#ffe9d6', '#ffcf9e', '#fca55c', '#e87613', '#b25000', '#6e3000'],
+  },
+  dark: {
+    ink: '#f5f4f0', ink2: '#c3c2b7', muted: '#8f8d86', grid: '#2c2c2a',
+    axis: '#4a4a46', surface: '#1a1a19', accent: '#d95926', space: '#f5f4f0',
+    inkRGB: '245,244,240',
+    ramp: ['#2b1c10', '#54300e', '#8a4a0a', '#c66a14', '#f68d33', '#ffbe8a'],
+  },
+};
+for (const t of Object.values(THEMES))
+  t.rampRGB = t.ramp.map(hx => [parseInt(hx.slice(1, 3), 16), parseInt(hx.slice(3, 5), 16),
+                                parseInt(hx.slice(5, 7), 16)]);
+let TH = THEMES.light;
+const inkA = a => 'rgba(' + TH.inkRGB + ',' + a + ')';
+function setTheme(name) {
+  document.documentElement.dataset.theme = name;
+  TH = THEMES[name] || THEMES.light;
+  const btn = $('themeBtn');
+  if (btn) {
+    btn.textContent = name === 'dark' ? 'light' : 'dark';
+    btn.setAttribute('aria-label', 'Switch to ' + (name === 'dark' ? 'light' : 'dark') + ' theme');
+  }
+  if (typeof drawAll === 'function') drawAll();
+}
 
 const $ = id => document.getElementById(id);
 const els = {
@@ -29,7 +68,7 @@ const els = {
   },
   s: { slope: $('stSslope'), sag: $('stSsag'), ten: $('stSten'), note: $('stSnote'), cv: $('cvS') },
   reqLine: $('reqLine'), reqFlag: $('reqFlag'),
-  cvSec: $('cvSec'), cvChart: $('cvChart'), cvSlew: $('cvSlew'),
+  cvSec: $('cvSec'), cvChart: $('cvChart'), cvSlew: $('cvSlew'), cvSlewAnim: $('cvSlewAnim'),
   phiStatus: $('phiStatus'), slewOut: $('slewOut'),
 };
 
@@ -120,11 +159,24 @@ function onSolved(p) {
 }
 function applyShapes(p, first) {
   shapes = p;
-  document.querySelectorAll('#solveNote').forEach(n => n.remove());
+  /* per-element |grad| of the slew billow shape, for the maneuver preview */
+  shapes.slopesS = elemSlopesOf(p.whatS, p.mesh);
+  shapes.maxAbsS = p.whatS.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
   if (!reduceMotion) { anim.gAmp.v = first ? 0 : Math.min(anim.gAmp.v, 0.5); }
   anim.gAmp.t = 1;
   update();
   scheduleTick();
+  scheduleSlewAnim();
+}
+function elemSlopesOf(what, mesh) {
+  const { nn, h, ne } = mesh, out = new Float64Array(ne);
+  for (let e = 0; e < ne; e++) {
+    const i = e % (nn - 1), j = (e / (nn - 1)) | 0, n0 = j * nn + i;
+    const wxm = (what[n0 + 1] - what[n0] + what[n0 + nn + 1] - what[n0 + nn]) / (2 * h);
+    const wym = (what[n0 + nn] - what[n0] + what[n0 + nn + 1] - what[n0 + 1]) / (2 * h);
+    out[e] = Math.hypot(wxm, wym);
+  }
+  return out;
 }
 (function startSolver() {
   try {
@@ -244,12 +296,11 @@ function fitCanvas(cv) {
   return { ctx, w: r.width, h: r.height };
 }
 
-/* sequential blue ramp (validated): slope 0 → 2×target mrad */
-const RAMP = ['#cde2fb', '#9ec5f4', '#6da7ec', '#3987e5', '#256abf', '#104281']
-  .map(hx => [parseInt(hx.slice(1, 3), 16), parseInt(hx.slice(3, 5), 16), parseInt(hx.slice(5, 7), 16)]);
+/* sequential single-hue orange ramp: slope 0 → 2×target mrad (theme-aware) */
 function rampColor(x) {                                  // x in [0,1]
-  const t = Math.max(0, Math.min(0.9999, x)) * (RAMP.length - 1);
-  const i = Math.floor(t), f = t - i, a = RAMP[i], b = RAMP[i + 1];
+  const R = TH.rampRGB;
+  const t = Math.max(0, Math.min(0.9999, x)) * (R.length - 1);
+  const i = Math.floor(t), f = t - i, a = R[i], b = R[i + 1];
   return 'rgb(' + Math.round(a[0] + (b[0] - a[0]) * f) + ',' +
     Math.round(a[1] + (b[1] - a[1]) * f) + ',' + Math.round(a[2] + (b[2] - a[2]) * f) + ')';
 }
@@ -279,13 +330,13 @@ function drawMembrane(cv, d, gEnv, amp) {
   const proj = (X, Y, z) => [cx + (X - Y) * KX * sc, cy + (X + Y) * KY * sc + z * KZ * sc];
 
   if (!shapes || d.slack) {                              // placeholder / slack flat sheet
-    ctx.strokeStyle = 'rgba(11,11,11,.25)'; ctx.lineWidth = 1;
+    ctx.strokeStyle = inkA(.25); ctx.lineWidth = 1;
     if (d.slack) ctx.setLineDash([4, 4]);
     const c = [proj(-L/2,-L/2,0), proj(L/2,-L/2,0), proj(L/2,L/2,0), proj(-L/2,L/2,0)];
     ctx.beginPath(); c.forEach((p,i)=> i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
     ctx.setLineDash([]);
     if (d.slack) {
-      ctx.fillStyle = '#898781'; ctx.textAlign = 'center';
+      ctx.fillStyle = TH.muted; ctx.textAlign = 'center';
       ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
       ctx.fillText('untensioned — film hangs slack (out of model)', cx, cy + 4);
     }
@@ -307,7 +358,8 @@ function drawMembrane(cv, d, gEnv, amp) {
    * true scale. With catenary cords the edges are cut as arcs — the physics
    * runs on the square domain (few-% sagitta), but the outline is drawn
    * scalloped: transfinite warp, sagitta L·tan(φ/2)/2, zero at the corners. */
-  const sagit = state.phiDeg > 0 ? Math.tan(state.phiDeg * Math.PI / 360) / 2 * L : 0;
+  const phiDraw = shapes.phiKey ?? state.phiDeg;         // draw the SOLVED geometry
+  const sagit = phiDraw > 0 ? Math.tan(phiDraw * Math.PI / 360) / 2 * L : 0;
   const px = new Float64Array(nn * nn), py = new Float64Array(nn * nn);
   const wx = new Float64Array(nn * nn), wy = new Float64Array(nn * nn);
   for (let j = 0; j < nn; j++) for (let i = 0; i < nn; i++) {
@@ -326,7 +378,7 @@ function drawMembrane(cv, d, gEnv, amp) {
 
   /* corner-plane frame (z = 0), dashed hairline behind the surface */
   ctx.save();
-  ctx.strokeStyle = '#c3c2b7'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = TH.axis; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
   const fr = [proj(-L/2,-L/2,0), proj(L/2,-L/2,0), proj(L/2,L/2,0), proj(-L/2,L/2,0)];
   ctx.beginPath(); fr.forEach((p,i)=> i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
   ctx.restore();
@@ -348,7 +400,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   }
 
   /* quiet wireframe every 5th grid line */
-  ctx.strokeStyle = 'rgba(11,11,11,.10)'; ctx.lineWidth = 0.75;
+  ctx.strokeStyle = inkA(.10); ctx.lineWidth = 0.75;
   for (let j = 0; j < nn; j += 5) {
     ctx.beginPath();
     for (let i = 0; i < nn; i++) { const n = j * nn + i; i ? ctx.lineTo(px[n], py[n]) : ctx.moveTo(px[n], py[n]); }
@@ -360,7 +412,7 @@ function drawMembrane(cv, d, gEnv, amp) {
 
   /* wrinkle hints: short strokes along the wrinkle direction (in-plane state —
    * present in both environments; it is a tension-field property, not gravity) */
-  ctx.strokeStyle = 'rgba(11,11,11,.14)'; ctx.lineWidth = 0.75;
+  ctx.strokeStyle = inkA(.14); ctx.lineWidth = 0.75;
   const ne1 = nn - 1;
   for (let e = 0; e < shapes.mesh.ne; e++) {
     if (shapes.wstate[e] !== 1) continue;
@@ -379,7 +431,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   }
 
   /* membrane edge outline — at φ>0 this is the catenary cord itself */
-  ctx.strokeStyle = sagit > 0 ? 'rgba(11,11,11,.55)' : 'rgba(11,11,11,.4)';
+  ctx.strokeStyle = sagit > 0 ? inkA(.55) : inkA(.4);
   ctx.lineWidth = sagit > 0 ? 1.4 : 1;
   ctx.beginPath();
   const edge = [];
@@ -392,12 +444,12 @@ function drawMembrane(cv, d, gEnv, amp) {
 
   /* corner-plane frame again in front, plus droop ticks at the mid-edges —
    * the gap between frame and film is what gravity costs */
-  ctx.strokeStyle = 'rgba(11,11,11,.38)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = inkA(.38); ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
   ctx.beginPath(); fr.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]));
   ctx.closePath(); ctx.stroke();
   ctx.setLineDash([]);
   if (gEnv && wSc > 0) {
-    ctx.strokeStyle = 'rgba(11,11,11,.30)';
+    ctx.strokeStyle = inkA(.30);
     const mid = (nn - 1) / 2;
     const midNodes = [mid, mid * nn, mid * nn + nn - 1, (nn - 1) * nn + mid];
     for (const n of midNodes) {                        // vertical drop, z = 0 → film
@@ -408,7 +460,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   }
 
   /* corner tabs + boom pull stubs */
-  ctx.fillStyle = '#0b0b0b'; ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1;
+  ctx.fillStyle = TH.ink; ctx.strokeStyle = TH.ink2; ctx.lineWidth = 1;
   const corners = [[0, 0, -1, -1], [nn - 1, 0, 1, -1], [0, nn - 1, -1, 1], [nn - 1, nn - 1, 1, 1]];
   for (const [ci, cj, sx, sy] of corners) {
     const n = cj * nn + ci;
@@ -421,7 +473,7 @@ function drawMembrane(cv, d, gEnv, amp) {
   }
 
   /* annotation */
-  ctx.fillStyle = '#898781'; ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.fillStyle = TH.muted; ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
   ctx.textAlign = 'right';
   ctx.fillText((!gEnv ? 'sunlight only · ' : d.g < 1e-4 ? 'no gravity load · ' : '') +
     'vertical sag ×' + fmt(EXZ, 0) + (compress < 0.98 ? ' (compressed)' : '') +
@@ -455,8 +507,8 @@ function drawSection() {
   const Y = v => m.t + (v / ymax) * ph;
 
   /* frame + gridlines + ticks (sag in mm, downward) */
-  ctx.strokeStyle = '#e1e0d9'; ctx.lineWidth = 1;
-  ctx.font = mono; ctx.fillStyle = '#898781';
+  ctx.strokeStyle = TH.grid; ctx.lineWidth = 1;
+  ctx.font = mono; ctx.fillStyle = TH.muted;
   for (const f of [0, 0.5, 1]) {
     const y = m.t + f * ph;
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
@@ -472,25 +524,25 @@ function drawSection() {
   if (!truth) { return; }
 
   /* space line at 0 (draw first, under others) */
-  ctx.strokeStyle = '#1baf7a'; ctx.lineWidth = 2;
+  ctx.strokeStyle = TH.space; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(m.l, Y(0)); ctx.lineTo(w - m.r, Y(0)); ctx.stroke();
 
   /* ideal (dashed muted) */
-  ctx.strokeStyle = '#898781'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+  ctx.strokeStyle = TH.muted; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
   ctx.beginPath(); ideal.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))); ctx.stroke();
   ctx.setLineDash([]);
 
   /* truth (accent) */
-  ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2;
+  ctx.strokeStyle = TH.accent; ctx.lineWidth = 2;
   ctx.beginPath(); truth.forEach((v, i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(X(i), Y(v))); ctx.stroke();
 
   /* direct labels (identity never color-alone) */
   ctx.font = mono;
   ctx.textAlign = 'right';
-  ctx.fillStyle = '#1baf7a'; ctx.fillText('space', w - m.r, Y(0) - 4);
-  ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', w - m.r, Y(truth[CFG.nn - 2]) + 12);
+  ctx.fillStyle = TH.space; ctx.fillText('space', w - m.r, Y(0) - 4);
+  ctx.fillStyle = TH.accent; ctx.fillText('FEM', w - m.r, Y(truth[CFG.nn - 2]) + 12);
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#898781';
+  ctx.fillStyle = TH.muted;
   ctx.fillText('ideal', X((CFG.nn - 1) / 2), Y(ideal[(CFG.nn - 1) / 2]) + 12);
 
   /* hover readout */
@@ -498,10 +550,10 @@ function drawSection() {
     const i = Math.round((hover.sec - m.l) / pw * (CFG.nn - 1));
     if (i >= 0 && i < CFG.nn) {
       const x = X(i);
-      ctx.strokeStyle = '#c3c2b7'; ctx.lineWidth = 1;
+      ctx.strokeStyle = TH.axis; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, m.t); ctx.lineTo(x, m.t + ph); ctx.stroke();
-      ctx.fillStyle = '#2a78d6'; ctx.beginPath(); ctx.arc(x, Y(truth[i]), 2.5, 0, 7); ctx.fill();
-      ctx.fillStyle = '#0b0b0b'; ctx.textAlign = x > w / 2 ? 'right' : 'left';
+      ctx.fillStyle = TH.accent; ctx.beginPath(); ctx.arc(x, Y(truth[i]), 2.5, 0, 7); ctx.fill();
+      ctx.fillStyle = TH.ink; ctx.textAlign = x > w / 2 ? 'right' : 'left';
       ctx.fillText(fmt(i / (CFG.nn - 1) * d.L, 1) + ' m · FEM ' + fmtAuto(truth[i]) +
         ' · ideal ' + fmtAuto(ideal[i]) + ' mm', x + (x > w / 2 ? -6 : 6), m.t + 10);
     }
@@ -527,7 +579,7 @@ function drawChart() {
   const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
 
   /* grid + ticks */
-  ctx.font = mono; ctx.fillStyle = '#898781'; ctx.strokeStyle = '#e1e0d9'; ctx.lineWidth = 1;
+  ctx.font = mono; ctx.fillStyle = TH.muted; ctx.strokeStyle = TH.grid; ctx.lineWidth = 1;
   for (const f of [0, 0.25, 0.5, 0.75, 1]) {
     const y = m.t + f * ph;
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
@@ -541,18 +593,18 @@ function drawChart() {
   ctx.textAlign = 'center'; ctx.fillText('corner force · N', m.l + pw / 2, h - 5);
 
   /* target hairline */
-  ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+  ctx.strokeStyle = TH.ink2; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
   ctx.beginPath(); ctx.moveTo(m.l, Y(state.tgt)); ctx.lineTo(w - m.r, Y(state.tgt)); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = '#52514e'; ctx.textAlign = 'left';
+  ctx.fillStyle = TH.ink2; ctx.textAlign = 'left';
   ctx.fillText('target ' + fmt(state.tgt, 2), m.l + 4, Y(state.tgt) - 4);
 
   const gzero = d.g < 0.005;
 
   /* space series: flat at ~0 */
-  ctx.strokeStyle = '#1baf7a'; ctx.lineWidth = 2;
+  ctx.strokeStyle = TH.space; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(m.l, Y(0)); ctx.lineTo(w - m.r, Y(0)); ctx.stroke();
-  ctx.fillStyle = '#1baf7a'; ctx.textAlign = 'right'; ctx.fillText('space', w - m.r - 2, Y(0) - 4);
+  ctx.fillStyle = TH.space; ctx.textAlign = 'right'; ctx.fillText('space', w - m.r - 2, Y(0) - 4);
 
   if (!gzero) {
     /* ideal (dashed muted) & truth (accent) hyperbolas — clip above ymax
@@ -568,23 +620,23 @@ function drawChart() {
       }
       ctx.stroke();
     };
-    ctx.strokeStyle = '#898781'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = TH.muted; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
     hyperbola(kIdeal);
     ctx.setLineDash([]);
-    if (shapes) { ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2; hyperbola(kTruth); }
+    if (shapes) { ctx.strokeStyle = TH.accent; ctx.lineWidth = 2; hyperbola(kTruth); }
 
     /* direct labels sit above their own curve mid-plot, clear of the corner;
      * nudge the ideal label along its curve if it lands on the target line */
     let Flab = 0.42 * Fmax;
     if (Math.abs(Y(Math.min(kIdeal / Flab, ymax)) - Y(state.tgt)) < 14) Flab = 0.62 * Fmax;
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#898781'; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
-    if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', X(0.42 * Fmax), Y(kTruth / (0.42 * Fmax)) + 13); }
+    ctx.fillStyle = TH.muted; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
+    if (shapes) { ctx.fillStyle = TH.accent; ctx.fillText('FEM', X(0.42 * Fmax), Y(kTruth / (0.42 * Fmax)) + 13); }
 
     /* required-force marker on the axis (the number lives in the shared line) */
     const Freq = analytic.Freq(d.sigma, d.g, d.L, state.tgt / 1e3);
     if (Freq <= Fmax) {
-      ctx.strokeStyle = '#52514e'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = TH.ink2; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.moveTo(X(Freq), m.t + ph); ctx.lineTo(X(Freq), m.t + ph - 7); ctx.stroke();
       ctx.lineWidth = 1;
     }
@@ -592,10 +644,10 @@ function drawChart() {
     /* current operating point on both ground curves */
     if (d.F >= Fmin) {
       if (shapes) {
-        ctx.fillStyle = '#2a78d6';
+        ctx.fillStyle = TH.accent;
         ctx.beginPath(); ctx.arc(X(d.F), Y(kTruth / d.F), 3.5, 0, 7); ctx.fill();
       }
-      ctx.strokeStyle = '#898781'; ctx.fillStyle = '#fcfcfb'; ctx.lineWidth = 1.5;
+      ctx.strokeStyle = TH.muted; ctx.fillStyle = TH.surface; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(X(d.F), Y(kIdeal / d.F), 3, 0, 7); ctx.fill(); ctx.stroke();
     }
   }
@@ -604,9 +656,9 @@ function drawChart() {
   if (hover.chart && !gzero) {
     const F = Math.round((hover.chart - m.l) / pw * Fmax / 5) * 5;
     if (F >= Fmin && F <= Fmax) {
-      ctx.strokeStyle = '#c3c2b7'; ctx.lineWidth = 1;
+      ctx.strokeStyle = TH.axis; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(X(F), m.t); ctx.lineTo(X(F), m.t + ph); ctx.stroke();
-      ctx.fillStyle = '#0b0b0b'; ctx.font = mono;
+      ctx.fillStyle = TH.ink; ctx.font = mono;
       ctx.textAlign = X(F) > w / 2 ? 'right' : 'left';
       const parts = ['F ' + fmt(F, 0) + ' N'];
       if (shapes) parts.push('FEM ' + fmtAuto(kTruth / F));
@@ -653,7 +705,7 @@ function drawSlew() {
   const Y = v => m.t + ph - (Math.min(v, ymax) / ymax) * ph;
 
   /* grid + ticks */
-  ctx.font = mono; ctx.fillStyle = '#898781'; ctx.strokeStyle = '#e1e0d9'; ctx.lineWidth = 1;
+  ctx.font = mono; ctx.fillStyle = TH.muted; ctx.strokeStyle = TH.grid; ctx.lineWidth = 1;
   for (const f of [0, 0.5, 1]) {
     const y = m.t + f * ph;
     ctx.beginPath(); ctx.moveTo(m.l, y); ctx.lineTo(w - m.r, y); ctx.stroke();
@@ -667,45 +719,152 @@ function drawSlew() {
   ctx.textAlign = 'center'; ctx.fillText('slew rate · °/s', m.l + pw / 2, h - 5);
 
   /* sunlight-only floor */
-  ctx.strokeStyle = '#898781'; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+  ctx.strokeStyle = TH.muted; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(m.l, Y(srp)); ctx.lineTo(w - m.r, Y(srp)); ctx.stroke();
   ctx.setLineDash([]);
-  ctx.fillStyle = '#898781'; ctx.textAlign = 'left';
+  ctx.fillStyle = TH.muted; ctx.textAlign = 'left';
   ctx.fillText('sunlight only', m.l + 4, Y(srp) - 4);
 
   /* total curve */
-  ctx.strokeStyle = '#1baf7a'; ctx.lineWidth = 2;
+  ctx.strokeStyle = TH.space; ctx.lineWidth = 2;
   ctx.beginPath();
   for (let o = 0; o <= OMAX + 1e-9; o += OMAX / 120) {
     const y = Y(spaceTotalMrad(d, o));
     o === 0 ? ctx.moveTo(X(o), y) : ctx.lineTo(X(o), y);
   }
   ctx.stroke();
-  ctx.fillStyle = '#1baf7a'; ctx.textAlign = 'right';
-  ctx.fillText('space total', w - m.r - 2, Y(spaceTotalMrad(d, OMAX)) - 6);
+  ctx.fillStyle = TH.space; ctx.textAlign = 'right';
+  ctx.fillText('while slewing', w - m.r - 2, Y(spaceTotalMrad(d, OMAX)) - 6);
 
   /* target line only when it is on scale */
   if (state.tgt <= ymax) {
-    ctx.strokeStyle = '#52514e'; ctx.setLineDash([2, 3]);
+    ctx.strokeStyle = TH.ink2; ctx.setLineDash([2, 3]);
     ctx.beginPath(); ctx.moveTo(m.l, Y(state.tgt)); ctx.lineTo(w - m.r, Y(state.tgt)); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = '#52514e'; ctx.textAlign = 'left';
+    ctx.fillStyle = TH.ink2; ctx.textAlign = 'left';
     ctx.fillText('target ' + fmt(state.tgt, 2), m.l + 4, Y(state.tgt) - 4);
   }
 
   /* current operating point */
-  ctx.fillStyle = '#1baf7a';
+  ctx.fillStyle = TH.space;
   ctx.beginPath(); ctx.arc(X(state.slew), Y(spaceTotalMrad(d, state.slew)), 3.5, 0, 7); ctx.fill();
 
   /* hover */
   if (hover.slew != null) {
     const o = Math.max(0, Math.min(OMAX, (hover.slew - m.l) / pw * OMAX));
-    ctx.strokeStyle = '#c3c2b7'; ctx.lineWidth = 1;
+    ctx.strokeStyle = TH.axis; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(X(o), m.t); ctx.lineTo(X(o), m.t + ph); ctx.stroke();
-    ctx.fillStyle = '#0b0b0b'; ctx.textAlign = X(o) > w / 2 ? 'right' : 'left';
+    ctx.fillStyle = TH.ink; ctx.textAlign = X(o) > w / 2 ? 'right' : 'left';
     ctx.fillText(fmt(o, 2) + ' °/s · ' + fmtSmart(spaceTotalMrad(d, o)) + ' mrad',
       X(o) + (X(o) > w / 2 ? -6 : 6), m.t + 10);
   }
+}
+
+/* ------------------------- slew maneuver preview -------------------------
+ * A repoint cycle (time-compressed): the mirror rocks between ±Θ; the film
+ * lags the acceleration and S-bows, flattening through the coast. The billow
+ * is drawn hugely exaggerated but its amplitude scales honestly with rate²,
+ * so dragging the slider up makes the lag visible. */
+const slewAnim = { raf: 0, t: 0, last: 0 };
+const SLEW_T = 6;                                        // s per full cycle (compressed)
+function slewAnimActive() {
+  return !!shapes && !document.hidden && !reduceMotion && state.slew > 0.02;
+}
+function scheduleSlewAnim() {
+  if (!slewAnim.raf && slewAnimActive()) slewAnim.raf = requestAnimationFrame(slewAnimTick);
+}
+function slewAnimTick(ts) {
+  slewAnim.raf = 0;
+  const dt = slewAnim.last ? Math.min(0.05, (ts - slewAnim.last) / 1000) : 0.016;
+  slewAnim.last = ts;
+  slewAnim.t += dt;
+  drawSlewAnim();
+  scheduleSlewAnim();
+}
+function drawSlewAnim() {
+  const cv = els.cvSlewAnim;
+  if (!cv) return;
+  const { ctx, w, h } = fitCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const d = derived();
+  const mono = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  if (!shapes || d.slack) {
+    ctx.fillStyle = TH.muted; ctx.font = mono; ctx.textAlign = 'center';
+    ctx.fillText(d.slack ? 'membrane slack' : '…', w / 2, h / 2);
+    return;
+  }
+  const L = d.L;
+  const pad = 8;
+  const sc = Math.min((w - 2 * pad) / (2 * L * KX), (h - 2 * pad - 26) / (2 * L * KY + 0.5 * L));
+  const cx = w / 2, cy = h / 2 - 2;
+  const phase = (slewAnim.t % SLEW_T) / SLEW_T * 2 * Math.PI;
+  const still = !slewAnimActive();
+  const theta = still ? 0 : 0.20 * Math.sin(phase);      // pointing angle, rad (visual)
+  const aNorm = still ? 1 : -Math.sin(phase);            // billow follows the acceleration
+  /* drawn billow amplitude: honest ∝ rate², softly saturating in-frame */
+  const cap = 0.22 * L;
+  const Araw = 0.16 * L * Math.pow(state.slew / 5, 2) * 8;
+  const Aeff = cap * Math.tanh(Araw / cap) * aNorm;
+  const nn = shapes.mesh.nn, hh = shapes.mesh.h, STEP = 2;
+  const norm = 1 / Math.max(shapes.maxAbsS, 1e-12);
+  const proj = (X, Y, z) => {
+    /* rotate about the in-plane centerline axis (parallel to Y edges) */
+    const Xr = X * Math.cos(theta) - z * Math.sin(theta);
+    const zr = X * Math.sin(theta) + z * Math.cos(theta);
+    return [cx + (Xr - Y) * KX * sc, cy + (Xr + Y) * KY * sc + zr * KZ * sc];
+  };
+  const pts = new Map();
+  const P = (i, j) => {
+    const k = j * nn + i;
+    let p = pts.get(k);
+    if (!p) {
+      const X = (i * hh - 0.5) * L, Y = (j * hh - 0.5) * L;
+      p = proj(X, Y, shapes.whatS[k] * norm * Aeff);
+      pts.set(k, p);
+    }
+    return p;
+  };
+  /* slew axis, dashed */
+  ctx.strokeStyle = TH.axis; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  const a0 = proj(0, -0.62 * L, 0), a1 = proj(0, 0.62 * L, 0);
+  ctx.beginPath(); ctx.moveTo(a0[0], a0[1]); ctx.lineTo(a1[0], a1[1]); ctx.stroke();
+  ctx.setLineDash([]);
+  /* surface, back to front, shaded by local billow slope */
+  const scale01 = Math.abs(Aeff) / cap;
+  if (!shapes.maxSlopeS) shapes.maxSlopeS = shapes.slopesS.reduce((a, v) => Math.max(a, v), 1e-12);
+  for (let s = 0; s <= 2 * (nn - 1 - STEP); s += STEP) {
+    for (let i = Math.max(0, s - (nn - 1 - STEP)); i <= Math.min(nn - 1 - STEP, s); i += STEP) {
+      const j = s - i;
+      if (j > nn - 1 - STEP || j % STEP) continue;
+      const e = j * (nn - 1) + i;
+      ctx.fillStyle = rampColor(shapes.slopesS[e] / shapes.maxSlopeS * scale01);
+      const p0 = P(i, j), p1 = P(i + STEP, j), p2 = P(i + STEP, j + STEP), p3 = P(i, j + STEP);
+      ctx.beginPath();
+      ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]);
+      ctx.lineTo(p2[0], p2[1]); ctx.lineTo(p3[0], p3[1]);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = ctx.fillStyle; ctx.lineWidth = 0.6; ctx.stroke();
+    }
+  }
+  /* outline + corner marks */
+  ctx.strokeStyle = inkA(.45); ctx.lineWidth = 1;
+  ctx.beginPath();
+  const last = nn - 1;
+  const ring = [];
+  for (let i = 0; i <= last; i += STEP) ring.push([i, 0]);
+  for (let j = STEP; j <= last; j += STEP) ring.push([last, j]);
+  for (let i = last - STEP; i >= 0; i -= STEP) ring.push([i, last]);
+  for (let j = last - STEP; j >= STEP; j -= STEP) ring.push([0, j]);
+  ring.forEach(([i, j], k) => { const p = P(i, j); k ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]); });
+  ctx.closePath(); ctx.stroke();
+  ctx.fillStyle = TH.ink;
+  for (const [i, j] of [[0, 0], [last, 0], [0, last], [last, last]]) {
+    const p = P(i, j); ctx.fillRect(p[0] - 1.5, p[1] - 1.5, 3, 3);
+  }
+  /* annotation */
+  ctx.fillStyle = TH.muted; ctx.font = mono; ctx.textAlign = 'right';
+  ctx.fillText((still ? 'paused · ' : 'time compressed · ') +
+    'billow exaggerated, grows ∝ rate²', w - 4, h - 4);
 }
 
 function drawAll() {
@@ -715,6 +874,7 @@ function drawAll() {
   drawSection();
   drawChart();
   drawSlew();
+  if (!slewAnimActive()) drawSlewAnim();                 // static frame when not animating
 }
 
 /* ------------------------------ controls -------------------------------- */
@@ -766,6 +926,7 @@ function onControl(key, live) {
   anim.gAmp.t = 1;
   update();
   scheduleTick();
+  scheduleSlewAnim();
 }
 presetBtns.forEach(b => b.addEventListener('click', () => {
   /* discrete jump: let the membrane re-settle from a shallower state */
@@ -797,6 +958,15 @@ for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngPhi', 'numPhi'], 'phiDe
   [['rngSlew', 'numSlew'], 'slew']])
   for (const id of ids) $(id).value = state[key];
 presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
+
+/* theme: the pre-paint <head> script already chose (?theme= or OS); adopt it */
+setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+matchMedia('(prefers-color-scheme: dark)')
+  .addEventListener('change', e => setTheme(e.matches ? 'dark' : 'light'));
+$('themeBtn').addEventListener('click', () =>
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+document.addEventListener('visibilitychange', () => { slewAnim.last = 0; scheduleSlewAnim(); });
 
 update();
 })();

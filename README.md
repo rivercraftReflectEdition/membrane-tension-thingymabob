@@ -6,11 +6,29 @@ drumhead) versus **in space** (no transverse load — the same tension leaves it
 flat). The point it makes: on the ground you spend hundreds of newtons per
 corner just fighting gravity; in orbit that load is gone.
 
-Everything is in **`index.html`** — no build, no backend, no external requests,
-no browser storage. Open it locally or serve it from GitHub Pages
-(Settings → Pages → deploy from branch → `main` / root).
+The shipped page is **`index.html`** — a single self-contained file (no
+backend, no external requests, no browser storage) served straight from
+GitHub Pages (Settings → Pages → deploy from branch → `main` / root).
 
-State is shareable via query string, e.g. `?g=1.62&F=120` (keys: `F g L m tgt E rho`).
+## Repo layout
+
+```
+src/template.html     markup + inlined brand mark
+src/styles.css        theme variables (light + dark), all styling
+src/physics-core.js   the FEM / analytic core (single source of truth)
+src/app.js            controls, worker, rendering, charts, animation
+build.js              node build.js → inlines src/ into index.html
+test/physics.test.js  acceptance tests; also fails if index.html is stale
+assets/               original logo SVG files
+```
+
+Edit under `src/`, run `node build.js`, commit both the source and the built
+`index.html`. The test suite verifies the built page embeds exactly
+`src/physics-core.js`.
+
+Dark mode follows the OS preference; the header button flips it. State is
+shareable via query string, e.g. `?g=1.62&F=120&phi=15&theme=dark`
+(keys: `F g L m tgt E rho phi slew theme`).
 
 ## Physics
 
@@ -59,7 +77,9 @@ Repointing in orbit: an overhead tracking pass at line-of-sight rate ω peaks at
 angular acceleration α ≈ 0.65·ω². The tangential acceleration α·x loads the
 film antisymmetrically about the slew axis (`rhs = ξ − ½`, one extra solve of
 the same operator); its RMS slope adds to the orthogonal solar-pressure billow
-in quadrature. The bottom chart sweeps ω 0–5 °/s.
+in quadrature. The bottom chart sweeps ω 0–5 °/s; the animated preview rocks
+the mirror through a time-compressed repoint cycle with the billow drawn
+(hugely exaggerated) at an amplitude that honestly scales with rate².
 
 Both are solved **once, dimensionless** at startup (in a worker); the stress
 field shape depends only on Poisson's ratio, so every control change afterwards
