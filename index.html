@@ -39,6 +39,8 @@ h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin-top:2px}
 
 /* layout */
 .layout{display:grid;grid-template-columns:236px 1fr;gap:28px;margin-top:22px}
+.layout>*{min-width:0}
+canvas{max-width:100%}
 @media (max-width:900px){
   .layout{grid-template-columns:1fr}
   header{flex-direction:column;align-items:flex-start}
@@ -727,6 +729,12 @@ const CFG = { nn: 41, nu: 0.34, maxIter: 30, floorFrac: 0.02 };
 const P_SUN = 9.1e-6;                      // Pa, solar radiation pressure hook (v1: context only)
 const DEFAULTS = { F: 250, g: 9.81, L: 15, massG: 350, tgt: 2.3, E_GPa: 2.1, rho: 1430 };
 const state = { ...DEFAULTS };
+/* shareable state via query string, e.g. ?g=1.62&F=400 (no storage APIs used) */
+const QMAP = { F: 'F', g: 'g', L: 'L', m: 'massG', tgt: 'tgt', E: 'E_GPa', rho: 'rho' };
+for (const [q, key] of Object.entries(QMAP)) {
+  const v = parseFloat(new URLSearchParams(location.search).get(q));
+  if (isFinite(v)) state[key] = v;
+}
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const $ = id => document.getElementById(id);
@@ -936,10 +944,17 @@ function drawMembrane(cv, d, gEnv, amp) {
   const cx = w / 2, cy = pad + L * KY * sc;
   const proj = (X, Y, z) => [cx + (X - Y) * KX * sc, cy + (X + Y) * KY * sc + z * KZ * sc];
 
-  if (!shapes) {                                         // placeholder flat sheet
+  if (!shapes || d.slack) {                              // placeholder / slack flat sheet
     ctx.strokeStyle = 'rgba(11,11,11,.25)'; ctx.lineWidth = 1;
+    if (d.slack) ctx.setLineDash([4, 4]);
     const c = [proj(-L/2,-L/2,0), proj(L/2,-L/2,0), proj(L/2,L/2,0), proj(-L/2,L/2,0)];
     ctx.beginPath(); c.forEach((p,i)=> i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.closePath(); ctx.stroke();
+    ctx.setLineDash([]);
+    if (d.slack) {
+      ctx.fillStyle = '#898781'; ctx.textAlign = 'center';
+      ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+      ctx.fillText('untensioned — film hangs slack (out of model)', cx, cy + 4);
+    }
     return;
   }
 
@@ -1061,7 +1076,9 @@ function drawMembrane(cv, d, gEnv, amp) {
   /* annotation */
   ctx.fillStyle = '#898781'; ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
   ctx.textAlign = 'right';
-  ctx.fillText(gEnv ? 'vertical sag ×' + fmt(exZ, 0) + ' · in-plane true scale' : 'same scale as ground panel',
+  ctx.fillText(!gEnv ? 'same scale as ground panel' :
+    d.g < 1e-4 ? 'no gravity load — flat · in-plane true scale' :
+    'vertical sag ×' + fmt(exZ, 0) + ' · in-plane true scale',
     w - 4, h - 4);
 }
 
@@ -1209,11 +1226,13 @@ function drawChart() {
     ctx.setLineDash([]);
     if (shapes) { ctx.strokeStyle = '#2a78d6'; ctx.lineWidth = 2; hyperbola(kTruth); }
 
-    /* direct labels sit above their own curve mid-plot, clear of the corner */
-    const Flab = 0.42 * Fmax;
+    /* direct labels sit above their own curve mid-plot, clear of the corner;
+     * nudge the ideal label along its curve if it lands on the target line */
+    let Flab = 0.42 * Fmax;
+    if (Math.abs(Y(Math.min(kIdeal / Flab, ymax)) - Y(state.tgt)) < 14) Flab = 0.62 * Fmax;
     ctx.textAlign = 'center';
     ctx.fillStyle = '#898781'; ctx.fillText('ideal', X(Flab), Y(Math.min(kIdeal / Flab, ymax)) - 6);
-    if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', X(Flab), Y(kTruth / Flab) + 13); }
+    if (shapes) { ctx.fillStyle = '#2a78d6'; ctx.fillText('FEM', X(0.42 * Fmax), Y(kTruth / (0.42 * Fmax)) + 13); }
 
     /* required-force tick on the axis */
     const Freq = analytic.Freq(d.sigma, d.g, d.L, state.tgt / 1e3);
@@ -1334,6 +1353,13 @@ wireHover(els.cvChart, 'chart');
 
 /* resize */
 new ResizeObserver(() => drawAll()).observe(document.querySelector('main'));
+
+/* reflect (possibly query-overridden) state into the controls */
+for (const [ids, key] of [[['rngF', 'numF'], 'F'], [['rngG', 'numG'], 'g'],
+  [['rngL', 'numL'], 'L'], [['rngM', 'numM'], 'massG'], [['numTgt'], 'tgt'],
+  [['numE'], 'E_GPa'], [['numRho'], 'rho']])
+  for (const id of ids) $(id).value = state[key];
+presetBtns.forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.g === state.g)));
 
 /* "solving" hint until the FEM lands */
 const solvingNote = document.createElement('div');
